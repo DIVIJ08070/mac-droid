@@ -85,6 +85,13 @@ struct ContentView: View {
                     Button("Send file…") { pickAndSendFiles() }
                     Button("Open link on phone") { server.sendClipboardURL() }
                 }
+                HStack {
+                    if server.screenViewing {
+                        Button("Stop viewing screen") { server.stopPhoneScreen() }
+                    } else {
+                        Button("View phone screen") { server.requestPhoneScreen() }
+                    }
+                }
                 Toggle("Stream Mac audio to phone (plays on the phone's Bluetooth/speaker)", isOn: Binding(
                     get: { server.speakerStreaming },
                     set: { enabled in

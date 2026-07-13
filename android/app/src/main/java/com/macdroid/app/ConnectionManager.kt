@@ -81,6 +81,10 @@ object ConnectionManager {
 
     private var micStreamer: MicStreamer? = null
     private var speakerPlayer: SpeakerPlayer? = null
+    private var screenStreamer: ScreenStreamer? = null
+
+    private val _screenSharing = MutableStateFlow(false)
+    val screenSharing: StateFlow<Boolean> = _screenSharing
 
     // Touchpad events must stay ordered, so a single consumer drains this queue.
     private val inputChannel =
@@ -264,6 +268,7 @@ object ConnectionManager {
         micStreamer = null
         _micStreaming.value = false
         stopSpeaker()
+        stopScreenShare(notifyMac = false)
         heartbeatJob?.cancel()
         heartbeatJob = null
         connectionJob?.cancel()
@@ -386,6 +391,53 @@ object ConnectionManager {
         speakerPlayer?.stop()
         speakerPlayer = null
         _speakerPlaying.value = false
+    }
+
+    // MARK: screen sharing (phone → Mac)
+
+    /**
+     * Called with the result of the MediaProjection consent dialog. Sets the
+     * sharing flag first so ConnectionService escalates to a mediaProjection
+     * foreground service (required on Android 14+), then starts capturing.
+     */
+    fun startScreenShare(projection: android.media.projection.MediaProjection) {
+        if (_state.value != ConnectionState.PAIRED || _screenSharing.value) {
+            projection.stop()
+            return
+        }
+        _screenSharing.value = true
+        scope.launch {
+            kotlinx.coroutines.delay(400) // let the service switch FGS types first
+            val streamer = ScreenStreamer(
+                context = appContext,
+                scope = scope,
+                onOffer = { width, height, port ->
+                    send(Packet("screen.start", JSONObject().apply {
+                        put("width", width)
+                        put("height", height)
+                        put("port", port)
+                    }))
+                },
+                onLog = ::appendLog,
+                onStopped = {
+                    _screenSharing.value = false
+                    scope.launch { send(Packet("screen.stop")) }
+                },
+            )
+            screenStreamer = streamer
+            streamer.start(projection)
+        }
+    }
+
+    fun stopScreenShare(notifyMac: Boolean = true) {
+        val hadStreamer = screenStreamer != null
+        screenStreamer?.stop()
+        screenStreamer = null
+        _screenSharing.value = false
+        if (hadStreamer && notifyMac) {
+            scope.launch { send(Packet("screen.stop")) }
+            appendLog("Screen sharing stopped")
+        }
     }
 
     /** Send files now if paired, otherwise queue them until pairing completes. */
@@ -606,6 +658,33 @@ object ConnectionManager {
                     _macTab.value = url to packet.body.optString("title")
                 }
             }
+
+            "screen.request" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                appendLog("Mac asked to view this screen")
+                val intent = Intent(appContext, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                val pending = android.app.PendingIntent.getActivity(
+                    appContext, 7, intent, android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+                val manager =
+                    appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(
+                    7,
+                    NotificationCompat.Builder(appContext, CHANNEL_ID)
+                        .setSmallIcon(android.R.drawable.stat_notify_chat)
+                        .setContentTitle("Share your screen?")
+                        .setContentText("Your Mac wants to view this phone. Tap, then press Share screen.")
+                        .setContentIntent(pending)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setAutoCancel(true)
+                        .build()
+                )
+            }
+
+            "screen.stop" -> {
+                stopScreenShare(notifyMac = false)
+            }
         }
     }
 
@@ -670,6 +749,7 @@ object ConnectionManager {
             micStreamer = null
             _micStreaming.value = false
             stopSpeaker()
+            stopScreenShare(notifyMac = false)
             heartbeatJob?.cancel()
             heartbeatJob = null
             socket = null

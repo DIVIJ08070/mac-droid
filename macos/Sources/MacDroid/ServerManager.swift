@@ -18,8 +18,11 @@ final class ServerManager: ObservableObject {
     @Published var phoneTabURL: String?
     @Published var phoneTabTitle: String = ""
 
+    @Published var screenViewing = false
+
     let micReceiver = MicReceiver()
     private let inputController = InputController()
+    private let screenViewer = ScreenViewer()
     private let statusBar = StatusBarController()
     private var tabTimer: Timer?
     private var lastSentTabURL: String?
@@ -37,6 +40,8 @@ final class ServerManager: ObservableObject {
     func start() {
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
+        screenViewer.onLog = { [weak self] message in self?.appendLog(message) }
+        screenViewer.onClosed = { [weak self] in self?.screenViewing = false }
 
         // Handoff-style tab sync: poll the front browser tab and push changes to the phone.
         tabTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -204,6 +209,21 @@ final class ServerManager: ObservableObject {
                 micReceiver.stop()
             }
 
+        case "screen.start":
+            guard isPaired,
+                  let width = packet.body["width"] as? Int,
+                  let height = packet.body["height"] as? Int,
+                  let port = packet.body["port"] as? Int,
+                  let host = remoteHost()
+            else { return }
+            screenViewer.start(host: host, port: UInt16(port), width: width, height: height)
+            screenViewing = true
+            appendLog("Viewing phone screen (\(width)×\(height))")
+
+        case "screen.stop":
+            screenViewer.stop()
+            screenViewing = false
+
         case "file.offer":
             guard isPaired,
                   let name = packet.body["name"] as? String,
@@ -276,6 +296,18 @@ final class ServerManager: ObservableObject {
         guard isPaired else { return }
         send(Packet(type: "ping", body: ["message": "Ping from \(deviceName)"]))
         appendLog("Ping → phone")
+    }
+
+    func requestPhoneScreen() {
+        guard isPaired else { return }
+        send(Packet(type: "screen.request"))
+        appendLog("Asked phone to share its screen — accept on the phone")
+    }
+
+    func stopPhoneScreen() {
+        send(Packet(type: "screen.stop"))
+        screenViewer.stop()
+        screenViewing = false
     }
 
     func sendClipboardURL() {
@@ -630,6 +662,8 @@ final class ServerManager: ObservableObject {
         audioSender?.stop()
         audioSender = nil
         speakerStreaming = false
+        screenViewer.stop()
+        screenViewing = false
         statusBar.hide()
         phoneTabURL = nil
         phoneTabTitle = ""

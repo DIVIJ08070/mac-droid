@@ -29,7 +29,7 @@ class ConnectionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForegroundWithTypes(includeMic = false, text = "Connecting…")
+        startForegroundWithTypes(includeMic = false, includeScreen = false, text = "Connecting…")
 
         scope.launch {
             ConnectionManager.state.collect { state ->
@@ -42,16 +42,20 @@ class ConnectionService : Service() {
             }
         }
 
-        // While the mic streams, escalate to a microphone-type foreground service so
-        // Android keeps recording alive when the app is backgrounded or screen is off.
+        // While the mic streams or the screen is shared, escalate the foreground
+        // service type accordingly — Android 14+ blocks both capabilities otherwise.
         scope.launch {
-            ConnectionManager.micStreaming.collect { micOn ->
+            kotlinx.coroutines.flow.combine(
+                ConnectionManager.micStreaming,
+                ConnectionManager.screenSharing
+            ) { mic, screen -> mic to screen }.collect { (micOn, screenOn) ->
                 try {
-                    startForegroundWithTypes(
-                        includeMic = micOn,
-                        text = if (micOn) "Streaming mic to Mac" else
-                            "Connected to ${ConnectionManager.macName.value ?: "Mac"}"
-                    )
+                    val text = when {
+                        screenOn -> "Sharing screen with Mac"
+                        micOn -> "Streaming mic to Mac"
+                        else -> "Connected to ${ConnectionManager.macName.value ?: "Mac"}"
+                    }
+                    startForegroundWithTypes(micOn, screenOn, text)
                 } catch (e: Exception) {
                     android.util.Log.w("MacDroid", "FGS type change failed: ${e.message}")
                 }
@@ -61,10 +65,11 @@ class ConnectionService : Service() {
         scope.launch { reconnectLoop() }
     }
 
-    private fun startForegroundWithTypes(includeMic: Boolean, text: String) {
+    private fun startForegroundWithTypes(includeMic: Boolean, includeScreen: Boolean, text: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             if (includeMic) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (includeScreen) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             startForeground(NOTIFICATION_ID, buildNotification(text), types)
         } else {
             startForeground(NOTIFICATION_ID, buildNotification(text))

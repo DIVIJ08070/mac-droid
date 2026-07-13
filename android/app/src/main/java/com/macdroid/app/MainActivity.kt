@@ -339,6 +339,7 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
     val transferStatus by ConnectionManager.transferStatus.collectAsState()
     val micStreaming by ConnectionManager.micStreaming.collectAsState()
     val speakerPlaying by ConnectionManager.speakerPlaying.collectAsState()
+    val screenSharing by ConnectionManager.screenSharing.collectAsState()
 
     val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -347,6 +348,17 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
     val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) ConnectionManager.startMic() }
+
+    val screenConsent = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+            val mpm = context.getSystemService(android.media.projection.MediaProjectionManager::class.java)
+            val projection = mpm?.getMediaProjection(result.resultCode, data)
+            if (projection != null) ConnectionManager.startScreenShare(projection)
+        }
+    }
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -439,6 +451,31 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
             } else {
                 Text(
                     "Tip: enable \"Stream Mac audio to phone\" on the Mac to listen through this phone's Bluetooth.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        SectionCard("Screen", "Show this phone live on your Mac") {
+            Button(
+                onClick = {
+                    if (screenSharing) {
+                        ConnectionManager.stopScreenShare()
+                    } else {
+                        val mpm = context.getSystemService(
+                            android.media.projection.MediaProjectionManager::class.java
+                        )
+                        screenConsent.launch(mpm.createScreenCaptureIntent())
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (screenSharing) "⏹ Stop sharing screen" else "🖥 Share screen to Mac")
+            }
+            if (screenSharing) {
+                Text(
+                    "Live — a viewer window is open on your Mac.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

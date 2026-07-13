@@ -35,6 +35,9 @@ One JSON object per line, terminated by `\n`:
 | `audio.stop` | both | `{"direction": "mic"\|"speaker"}` | stop the stream and close the side channel |
 | `input` | Android → Mac | `{"a": "m"\|"sc"\|"c"\|"dd"\|"du"\|"g", "dx": 1.5, "dy": -2, "b": "l"\|"r"\|"m", "g": "3left"\|"3right"\|"3up"\|"3down"\|"pinchin"\|"pinchout"\|"4up"\|"4down"}` | touchpad: move, scroll, click (left/right/middle), drag down/up, or a named trackpad gesture. Sent up to ~60×/s; Mac injects CGEvents (needs Accessibility permission) |
 | `browse` | both | `{"url": "https://…", "title": "…", "source": "phone"\|"mac"}` | Handoff-style tab sync: the page currently open in the sender's browser. Phone→Mac shows in the Mac menu bar; Mac→phone shows as an "Open on phone" card |
+| `screen.request` | Mac → Android | `{}` | ask the phone to share its screen; the phone shows a notification (Android requires user consent on-device) |
+| `screen.start` | Android → Mac | `{"width": 540, "height": 1170, "port": 54321}` | screen stream ready: raw H.264 Annex-B on the side channel; Mac opens a viewer window |
+| `screen.stop` | both | `{}` | end the screen stream |
 
 ## Audio streaming
 Same side-channel pattern as files, but continuous:
