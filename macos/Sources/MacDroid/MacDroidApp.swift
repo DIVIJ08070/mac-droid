@@ -11,7 +11,11 @@ struct MacDroidApp: App {
             ContentView()
                 .environmentObject(server)
                 .onAppear { server.start() }
+                .background(Color.black.ignoresSafeArea())
+                .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
     }
 }
 

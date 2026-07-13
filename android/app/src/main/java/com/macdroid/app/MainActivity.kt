@@ -7,14 +7,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,26 +24,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -52,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -83,20 +72,32 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Black system bars with white (light) icons, edge to edge.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+        )
         ConnectionManager.init(this)
         requestNotificationPermissionIfNeeded()
         handleShareIntent(intent)
 
         setContent {
-            val dark = isSystemInDarkTheme()
-            val colorScheme = when {
-                Build.VERSION.SDK_INT >= 31 && dark -> dynamicDarkColorScheme(this)
-                Build.VERSION.SDK_INT >= 31 -> dynamicLightColorScheme(this)
-                dark -> darkColorScheme()
-                else -> lightColorScheme()
-            }
-            MaterialTheme(colorScheme = colorScheme) {
-                MacDroidScreen()
+            MacDroidTheme {
+                var showOnboarding by remember { mutableStateOf(!OnboardingPrefs.isDone(this)) }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MdBlack)
+                ) {
+                    if (showOnboarding) {
+                        OnboardingScreen(onDone = {
+                            OnboardingPrefs.setDone(this@MainActivity)
+                            showOnboarding = false
+                        })
+                    } else {
+                        MacDroidScreen(onReplayOnboarding = { showOnboarding = true })
+                    }
+                }
             }
         }
     }
@@ -137,99 +138,95 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MacDroidScreen() {
+fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     val state by ConnectionManager.state.collectAsState()
     val macName by ConnectionManager.macName.collectAsState()
     var showTouchpad by remember { mutableStateOf(false) }
     val touchpadVisible = state == ConnectionState.PAIRED && showTouchpad
 
-    Scaffold(
-        topBar = {
-            if (!touchpadVisible) {
-                TopAppBar(title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(state)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("MacDroid", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                when (state) {
-                                    ConnectionState.PAIRED -> "Connected to ${macName ?: "Mac"}"
-                                    ConnectionState.CONNECTING -> "Connecting…"
-                                    ConnectionState.PAIRING -> "Pairing…"
-                                    ConnectionState.DISCONNECTED -> "Not connected"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MdBlack)
+            .systemBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (!touchpadVisible) {
+            HomeHeader(state, macName, onReplayOnboarding)
+        }
+        Box(Modifier.weight(1f)) {
+            when (state) {
+                ConnectionState.DISCONNECTED -> DiscoveryPane()
+                ConnectionState.CONNECTING -> StatusPane("Connecting to your Mac…")
+                ConnectionState.PAIRING -> PairingPane()
+                ConnectionState.PAIRED ->
+                    if (showTouchpad) {
+                        TouchpadPane(onBack = { showTouchpad = false })
+                    } else {
+                        ConnectedPane(onOpenTouchpad = { showTouchpad = true })
                     }
-                })
             }
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(Modifier.weight(1f)) {
+        if (!touchpadVisible) LogPane()
+    }
+}
+
+@Composable
+private fun HomeHeader(
+    state: ConnectionState,
+    macName: String?,
+    onReplayOnboarding: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusDot(state)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "MacDroid",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Light,
+                fontSize = 26.sp,
+            )
+            Text(
                 when (state) {
-                    ConnectionState.DISCONNECTED -> DiscoveryPane()
-                    ConnectionState.CONNECTING -> StatusPane("Connecting to your Mac…")
-                    ConnectionState.PAIRING -> PairingPane()
-                    ConnectionState.PAIRED ->
-                        if (showTouchpad) {
-                            TouchpadPane(onBack = { showTouchpad = false })
-                        } else {
-                            ConnectedPane(onOpenTouchpad = { showTouchpad = true })
-                        }
-                }
-            }
-            if (!touchpadVisible) LogPane()
+                    ConnectionState.PAIRED -> "Connected to ${macName ?: "Mac"}"
+                    ConnectionState.CONNECTING -> "Connecting…"
+                    ConnectionState.PAIRING -> "Pairing…"
+                    ConnectionState.DISCONNECTED -> "Not connected"
+                },
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+            )
+        }
+        // Replay onboarding
+        Box(
+            Modifier
+                .size(34.dp)
+                .border(1.dp, MdBorder, CircleShape)
+                .background(MdSurface, CircleShape)
+                .clickable(onClick = onReplayOnboarding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("?", color = MdWhite60, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
         }
     }
 }
 
 @Composable
 private fun StatusDot(state: ConnectionState) {
-    val color = when (state) {
-        ConnectionState.PAIRED -> Color(0xFF34C759)
-        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.outline
-        else -> Color(0xFFFF9F0A)
-    }
-    Box(
-        Modifier
-            .size(12.dp)
-            .background(color, CircleShape)
-    )
-}
-
-@Composable
-private fun SectionCard(
-    title: String,
-    subtitle: String? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            subtitle?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            content()
-        }
+    when (state) {
+        ConnectionState.PAIRED -> StaticDot(MdGreen)
+        ConnectionState.DISCONNECTED -> PulsingDot(MdWhite)
+        else -> PulsingDot(MdAmber)
     }
 }
 
@@ -246,41 +243,74 @@ private fun DiscoveryPane() {
         onDispose { discovery.stop() }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Connect your Mac") {
-            Text(
-                "1.  Open the MacDroid app on your Mac\n" +
-                    "2.  Keep both devices on the same Wi-Fi\n" +
-                    "3.  Your Mac will appear below — tap Connect",
-                style = MaterialTheme.typography.bodyMedium
-            )
+    // Show a helper card if nothing turns up after a few seconds.
+    val showEmptyHint by produceState(initialValue = false) {
+        delay(6000)
+        value = true
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Entrance(0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
+                PulsingDot(MdWhite, size = 8.dp)
+                Spacer(Modifier.width(12.dp))
+                SectionLabel("Looking for your Mac")
+            }
+        }
+        Entrance(1) {
+            DarkCard {
                 Text(
-                    "Searching your network…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "1  Open the MacDroid app on your Mac\n" +
+                        "2  Keep both devices on the same Wi-Fi\n" +
+                        "3  Your Mac appears below — tap it",
+                    color = MdWhite60,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 24.sp,
                 )
             }
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(macs, key = { it.name }) { mac ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("💻  ${mac.name}", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                mac.host,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                Entrance(2) {
+                    DarkCard(onClick = { ConnectionManager.connect(mac) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    mac.name,
+                                    color = MdWhite,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 16.sp,
+                                )
+                                Text(
+                                    mac.host,
+                                    color = MdWhite40,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            PrimaryPill("Connect") { ConnectionManager.connect(mac) }
                         }
-                        Button(onClick = { ConnectionManager.connect(mac) }) {
-                            Text("Connect")
+                    }
+                }
+            }
+            if (macs.isEmpty() && showEmptyHint) {
+                item {
+                    Entrance(0) {
+                        DarkCard {
+                            Text(
+                                "No Macs found yet",
+                                color = MdWhite,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 14.sp,
+                            )
+                            Text(
+                                "Is MacDroid open on your Mac?\nSame Wi-Fi network?",
+                                color = MdWhite40,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                            )
                         }
                     }
                 }
@@ -292,9 +322,14 @@ private fun DiscoveryPane() {
 @Composable
 private fun StatusPane(message: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(message, style = MaterialTheme.typography.titleMedium)
+        PulsingDot(MdAmber, size = 10.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            message,
+            color = MdWhite,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 15.sp,
+        )
     }
 }
 
@@ -305,29 +340,56 @@ private fun PairingPane() {
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 32.dp)
     ) {
         if (code != null) {
-            Text("Pairing with ${macName ?: "Mac"}", style = MaterialTheme.typography.titleMedium)
-            Text(
-                code!!,
-                fontSize = 44.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                "Click Accept on your Mac to finish",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Entrance(0) { SectionLabel("Pairing with ${macName ?: "Mac"}") }
+            Entrance(1) {
+                Text(
+                    code!!,
+                    color = MdWhite,
+                    fontSize = 56.sp,
+                    fontWeight = FontWeight.Light,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 6.sp,
+                )
+            }
+            Entrance(2) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Check it matches your Mac's screen",
+                        color = MdWhite60,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Then click Accept on the Mac to finish",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         } else {
-            Text(
-                "Reconnecting to ${macName ?: "Mac"}…",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Entrance(0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PulsingDot(MdAmber, size = 10.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Reconnecting to ${macName ?: "Mac"}…",
+                        color = MdWhite,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 15.sp,
+                    )
+                }
+            }
         }
-        OutlinedButton(onClick = { ConnectionManager.disconnect() }) {
-            Text("Cancel")
+        Entrance(3) {
+            GhostPill("Cancel") { ConnectionManager.disconnect() }
         }
     }
 }
@@ -368,64 +430,72 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Button(onClick = onOpenTouchpad, modifier = Modifier.fillMaxWidth()) {
-            Text("🖱   Open Touchpad", style = MaterialTheme.typography.titleMedium)
+        Entrance(0) {
+            PrimaryPill(
+                "Open Touchpad",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                onClick = onOpenTouchpad,
+            )
         }
 
-        SectionCard("Share", "Move things between your devices") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { ConnectionManager.sendClipboard() }, Modifier.weight(1f)) {
-                    Text("📋 Clipboard")
+        Entrance(1) { SectionLabel("Clipboard & Files", Modifier.padding(top = 8.dp)) }
+        Entrance(1) {
+            DarkCard {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GhostPill("Clipboard", Modifier.weight(1f)) { ConnectionManager.sendClipboard() }
+                    GhostPill("Files", Modifier.weight(1f)) { filePicker.launch("*/*") }
                 }
-                Button(onClick = { filePicker.launch("*/*") }, Modifier.weight(1f)) {
-                    Text("📁 Files")
+                GhostPill("Open copied link on Mac", Modifier.fillMaxWidth()) {
+                    ConnectionManager.sendClipboardUrl()
                 }
-            }
-            Button(
-                onClick = { ConnectionManager.sendClipboardUrl() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🔗 Open copied link on Mac")
-            }
-            transferStatus?.let {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(it, style = MaterialTheme.typography.bodySmall)
+                transferStatus?.let {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PulsingDot(MdWhite, size = 7.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(it, color = MdWhite60, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    }
                 }
-            }
-            lastClipboard?.let {
-                Text(
-                    "Last from Mac: $it",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2
-                )
-            }
-        }
-
-        SectionCard("Mac remote", "Control your Mac from here") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("volume_down") }, Modifier.weight(1f)) { Text("Vol −") }
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("volume_up") }, Modifier.weight(1f)) { Text("Vol +") }
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("mute") }, Modifier.weight(1f)) { Text("Mute") }
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("playpause") }, Modifier.weight(1f)) { Text("⏯") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("lock") }, Modifier.weight(1f)) { Text("🔒 Lock") }
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("sleep") }, Modifier.weight(1f)) { Text("😴 Sleep") }
-                OutlinedButton(onClick = { ConnectionManager.sendCommand("screenshot") }, Modifier.weight(1f)) { Text("📸 Shot") }
-            }
-            Button(onClick = { ConnectionManager.pingMac() }, modifier = Modifier.fillMaxWidth()) {
-                Text("🔔 Ping Mac")
+                lastClipboard?.let {
+                    Text(
+                        "Last from Mac: $it",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                    )
+                }
             }
         }
 
-        SectionCard("Audio", "Use your phone as the Mac's mic and speaker") {
-            Button(
-                onClick = {
+        Entrance(2) { SectionLabel("Remote", Modifier.padding(top = 8.dp)) }
+        Entrance(2) {
+            DarkCard {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GhostPill("Vol −", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("volume_down") }
+                    GhostPill("Vol +", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("volume_up") }
+                    GhostPill("Mute", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("mute") }
+                    GhostPill("⏯", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("playpause") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GhostPill("Lock", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("lock") }
+                    GhostPill("Sleep", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("sleep") }
+                    GhostPill("Shot", Modifier.weight(1f), compact = true) { ConnectionManager.sendCommand("screenshot") }
+                }
+                GhostPill("Ping Mac", Modifier.fillMaxWidth()) { ConnectionManager.pingMac() }
+            }
+        }
+
+        Entrance(3) { SectionLabel("Audio", Modifier.padding(top = 8.dp)) }
+        Entrance(3) {
+            DarkCard {
+                GhostPill(
+                    if (micStreaming) "Stop mic" else "Use as Mac microphone",
+                    Modifier.fillMaxWidth(),
+                ) {
                     if (micStreaming) {
                         ConnectionManager.stopMic()
                     } else if (ContextCompat.checkSelfPermission(
@@ -436,36 +506,45 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
                     } else {
                         micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (micStreaming) "⏹ Stop mic" else "🎤 Use as Mac microphone")
-            }
-            if (speakerPlaying) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("🔊 Playing Mac audio", Modifier.weight(1f))
-                    OutlinedButton(onClick = { ConnectionManager.stopSpeaker() }) { Text("Stop") }
                 }
-                Text(
-                    "Sound plays through this phone — including Bluetooth devices connected to it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Text(
-                    "Tip: enable \"Stream Mac audio to phone\" on the Mac to listen through this phone's Bluetooth.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (speakerPlaying) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Playing Mac audio",
+                            Modifier.weight(1f),
+                            color = MdWhite,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                        )
+                        GhostPill("Stop", compact = true) { ConnectionManager.stopSpeaker() }
+                    }
+                    Text(
+                        "Sound plays through this phone — including Bluetooth devices connected to it.",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                } else {
+                    Text(
+                        "Tip: enable \"Stream Mac audio to phone\" on the Mac to listen through this phone's Bluetooth.",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
             }
         }
 
-        SectionCard("Screen", "Show this phone live on your Mac") {
-            Button(
-                onClick = {
+        Entrance(4) { SectionLabel("Screen", Modifier.padding(top = 8.dp)) }
+        Entrance(4) {
+            DarkCard {
+                GhostPill(
+                    if (screenSharing) "Stop sharing screen" else "Share screen to Mac",
+                    Modifier.fillMaxWidth(),
+                ) {
                     if (screenSharing) {
                         ConnectionManager.stopScreenShare()
                     } else {
@@ -474,51 +553,62 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
                         )
                         screenConsent.launch(mpm.createScreenCaptureIntent())
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (screenSharing) "⏹ Stop sharing screen" else "🖥 Share screen to Mac")
-            }
-            if (screenSharing) {
-                Text(
-                    "Live — a viewer window is open on your Mac.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            OutlinedButton(
-                onClick = { ConnectionManager.requestMacScreen() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🖥 View Mac screen here")
-            }
-            val controlEnabled by produceState(initialValue = RemoteControlService.isEnabled(context)) {
-                while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
-            }
-            if (controlEnabled) {
-                Text(
-                    "✓ Mouse control enabled — click the Mac window to tap, drag to swipe.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                OutlinedButton(onClick = {
-                    context.startActivity(
-                        Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (screenSharing) {
+                    Text(
+                        "Live — a viewer window is open on your Mac.",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
                     )
-                }) { Text("Enable mouse control") }
+                }
+                GhostPill("View Mac screen here", Modifier.fillMaxWidth()) {
+                    ConnectionManager.requestMacScreen()
+                }
+                val controlEnabled by produceState(initialValue = RemoteControlService.isEnabled(context)) {
+                    while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
+                }
+                if (controlEnabled) {
+                    Text(
+                        "✓ Mouse control enabled — click the Mac window to tap, drag to swipe.",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                } else {
+                    GhostPill("Enable mouse control") {
+                        context.startActivity(
+                            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
             }
         }
 
-        TabSyncCard()
+        Entrance(5) { SectionLabel("Tab Sync", Modifier.padding(top = 8.dp)) }
+        Entrance(5) { TabSyncCard() }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { ConnectionManager.userDisconnect() }, Modifier.weight(1f)) {
-                Text("Disconnect")
-            }
-            TextButton(onClick = { ConnectionManager.forgetMac() }, Modifier.weight(1f)) {
-                Text("Forget this Mac")
+        Entrance(6) {
+            Row(
+                Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GhostPill("Disconnect", Modifier.weight(1f)) { ConnectionManager.userDisconnect() }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clickable { ConnectionManager.forgetMac() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Forget this Mac",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -539,38 +629,42 @@ private fun TabSyncCard() {
         }
     }
 
-    SectionCard("Tab sync", "Continue browsing on the other device") {
+    DarkCard {
         macTab?.let { (url, title) ->
             Text(
-                "🌐 On your Mac: ${title.ifEmpty { url }}",
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2
+                "On your Mac: ${title.ifEmpty { url }}",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                maxLines = 2,
             )
-            Button(onClick = {
+            PrimaryPill("Continue here") {
                 context.startActivity(
                     Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-            }) { Text("Continue here") }
+            }
         } ?: Text(
             "Browse on the Mac and the page appears here.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MdWhite40,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
         )
 
         if (watcherEnabled) {
             Text(
                 "✓ Your phone's tabs show in the Mac's menu bar.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
             )
         } else {
-            OutlinedButton(onClick = {
+            GhostPill("Enable phone → Mac sync") {
                 context.startActivity(
                     Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-            }) { Text("Enable phone → Mac sync") }
+            }
         }
     }
 }
@@ -580,17 +674,17 @@ private fun LogPane() {
     val log by ConnectionManager.log.collectAsState()
     if (log.isEmpty()) return
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    DarkCard(padding = 10.dp) {
         LazyColumn(
-            modifier = Modifier
-                .padding(10.dp)
-                .height(96.dp),
+            modifier = Modifier.height(96.dp),
             reverseLayout = true
         ) {
             items(log.reversed()) { line ->
                 Text(
                     line,
-                    style = MaterialTheme.typography.bodySmall,
+                    color = MdWhite40,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
