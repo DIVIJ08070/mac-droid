@@ -8,6 +8,7 @@ import Network
 @MainActor
 final class MicReceiver: ObservableObject {
     @Published var isActive = false
+    @Published var level: Float = 0 // smoothed output level 0…1, for the UI meter
     @Published var outputDevices: [AudioDevice] = []
     @Published var selectedDeviceID: AudioDeviceID = 0 // 0 = system default
 
@@ -57,6 +58,18 @@ final class MicReceiver: ObservableObject {
         }
         player.play()
 
+        engine.mainMixerNode.removeTap(onBus: 0)
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
+            guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var sum: Float = 0
+            for frame in 0..<Int(buffer.frameLength) { sum += data[frame] * data[frame] }
+            let rms = min(sqrt(sum / Float(buffer.frameLength)) * 3, 1)
+            Task { @MainActor in
+                guard let self, self.isActive else { return }
+                self.level = self.level * 0.6 + rms * 0.4
+            }
+        }
+
         let conn = NWConnection(host: host, port: nwPort, using: .tcp)
         connection = conn
         leftover = Data()
@@ -68,7 +81,12 @@ final class MicReceiver: ObservableObject {
                     self.isActive = true
                     self.onLog?("Phone microphone connected")
                     self.receiveLoop(conn)
-                case .failed, .cancelled:
+                case .failed(let error), .waiting(let error):
+                    // .waiting means unreachable (e.g. connection refused) — on a LAN
+                    // dial-back there is nothing to wait for, so treat it as failure.
+                    self.onLog?("Couldn't reach the phone's mic stream (\(error.localizedDescription)) — are both devices on the same Wi-Fi?")
+                    self.stop()
+                case .cancelled:
                     self.stop()
                 default:
                     break
@@ -83,9 +101,11 @@ final class MicReceiver: ObservableObject {
         connection?.stateUpdateHandler = nil
         connection?.cancel()
         connection = nil
+        engine.mainMixerNode.removeTap(onBus: 0)
         player.stop()
         engine.stop()
         engine.reset()
+        level = 0
         if isActive {
             isActive = false
             onLog?("Phone microphone stopped")

@@ -30,15 +30,44 @@ struct ContentView: View {
         .frame(minWidth: 640, minHeight: 640)
         .preferredColorScheme(.dark)
         .overlay { dropOverlay }
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+        .onDrop(of: [.fileURL, .image, .movie], isTargeted: $isDropTargeted) { providers in
             guard server.isPaired else { return false }
+            var handledAny = false
             for provider in providers {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    Task { @MainActor in server.sendFile(url: url) }
+                if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    handledAny = true
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        Task { @MainActor in server.sendFile(url: url) }
+                    }
+                } else if let type = [UTType.image, UTType.movie]
+                    .first(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) {
+                    // Photos.app and similar apps drag media data, not file URLs. The
+                    // provider's temp file is deleted when the handler returns, so copy
+                    // it out before handing it to the (async) transfer.
+                    handledAny = true
+                    let suggestedName = provider.suggestedName
+                    _ = provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, _ in
+                        guard let url else { return }
+                        let dropDir = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("MacDroidDrops", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: dropDir, withIntermediateDirectories: true)
+                        var name = url.lastPathComponent
+                        if let suggestedName, !suggestedName.isEmpty {
+                            name = suggestedName
+                            let ext = url.pathExtension
+                            if !ext.isEmpty && (name as NSString).pathExtension.isEmpty {
+                                name += ".\(ext)"
+                            }
+                        }
+                        let destination = dropDir.appendingPathComponent(name)
+                        try? FileManager.default.removeItem(at: destination)
+                        guard (try? FileManager.default.copyItem(at: url, to: destination)) != nil else { return }
+                        Task { @MainActor in server.sendFile(url: destination) }
+                    }
                 }
             }
-            return true
+            return handledAny
         }
     }
 
@@ -232,7 +261,7 @@ struct ContentView: View {
             wrapButtons {
                 Button("Send file…") { pickAndSendFiles() }
             }
-            Text("Or drag files anywhere onto this window.")
+            Text("Or drag files — or photos straight from Photos — anywhere onto this window.")
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.faint)
                 .lineSpacing(3)
@@ -406,10 +435,11 @@ struct ContentView: View {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(.red)
-                        Text("Phone mic live — playing to:")
+                        Text("Phone mic LIVE — playing to:")
                             .font(Theme.mono(11))
                             .foregroundStyle(.white)
                     }
+                    levelMeter
                     Picker("", selection: $mic.selectedDeviceID) {
                         Text("System default").tag(AudioDeviceID(0))
                         ForEach(mic.outputDevices) { device in
@@ -423,7 +453,36 @@ struct ContentView: View {
                         .foregroundStyle(Theme.faint)
                         .lineSpacing(3)
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "mic")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.faint)
+                        Text("PHONE AS MIC")
+                            .font(Theme.mono(9))
+                            .tracking(2)
+                            .foregroundStyle(Theme.faint)
+                    }
+                    Text("Start it from the phone: “Use as Mac microphone”. A live meter appears here. If nothing happens, check the Activity log below.")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.faint)
+                        .lineSpacing(3)
+                }
             }
+        }
+
+        private var levelMeter: some View {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule()
+                        .fill(Color(red: 0.45, green: 0.95, blue: 0.6))
+                        .frame(width: max(4, geo.size.width * CGFloat(mic.level)))
+                        .animation(.linear(duration: 0.08), value: mic.level)
+                }
+            }
+            .frame(width: 220, height: 5)
         }
     }
 

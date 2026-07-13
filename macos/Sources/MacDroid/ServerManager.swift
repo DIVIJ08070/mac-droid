@@ -677,7 +677,7 @@ final class ServerManager: ObservableObject {
                 switch state {
                 case .ready:
                     loop()
-                case .failed:
+                case .failed, .waiting:
                     finish(success: false)
                 default:
                     break

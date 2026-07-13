@@ -39,6 +39,9 @@ final class ScreenViewer: NSObject {
                 case .ready:
                     self.onLog?("Phone screen connected")
                     self.receiveLoop(conn)
+                case .waiting(let error):
+                    self.onLog?("Couldn't reach the phone's screen stream (\(error.localizedDescription)) — are both devices on the same Wi-Fi?")
+                    self.stop()
                 case .failed, .cancelled:
                     self.stop()
                 default:

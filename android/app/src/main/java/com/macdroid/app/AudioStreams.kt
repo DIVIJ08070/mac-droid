@@ -47,7 +47,7 @@ class MicStreamer(
 
                 ServerSocket(0).use { serverSocket ->
                     server = serverSocket
-                    serverSocket.soTimeout = 15000
+                    serverSocket.soTimeout = 30000
                     onOffer(SAMPLE_RATE, 1, serverSocket.localPort)
                     onLog("Mic stream ready — waiting for Mac")
 
@@ -71,6 +71,8 @@ class MicStreamer(
                         }
                     }
                 }
+            } catch (e: java.net.SocketTimeoutException) {
+                if (running) onLog("The Mac never connected to the mic stream — are both devices still on the same Wi-Fi? Check the Mac's Activity log and try again.")
             } catch (e: Exception) {
                 if (running) onLog("Mic stream ended: ${e.message}")
             } finally {
