@@ -35,7 +35,11 @@
     -moz-osx-font-smoothing: grayscale;
     font-family: "Space Mono", monospace;
     scroll-behavior: smooth;
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* old Edge */
   }
+  /* Hide the scrollbar (page still scrolls) */
+  html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
 
   /* Dot grid overlay */
   .dot-grid {
