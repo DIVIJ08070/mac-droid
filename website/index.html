@@ -307,9 +307,17 @@
         <span class="text-white/30 text-[15px] pt-0.5">01</span>
         <div>
           <h3 class="text-white text-[16px] sm:text-[18px] mb-2">Install on the Mac</h3>
+          <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed mb-3">
+            Fastest way — paste this in Terminal. It installs straight to Applications and opens
+            with <span class="text-white/70">no security warning</span>:
+          </p>
+          <div class="flex items-start gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-4 py-3 mb-3">
+            <code id="installCmd" class="flex-1 text-white/80 text-[11px] sm:text-[12px] leading-relaxed break-all select-all"></code>
+            <button onclick="copyInstallCmd(this)" class="pill-hover flex-none text-white/60 hover:text-white text-[12px] px-2.5 py-1 bg-white/10 rounded-lg" aria-label="Copy command">copy</button>
+          </div>
           <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
-            Download, unzip, move MacDroid.app to Applications. Open it once — macOS will say it
-            "could not verify" the app (it isn't Apple-notarized). Click Done, then go to
+            Or download normally: unzip, move MacDroid.app to Applications, open it once — macOS
+            will say it "could not verify" the app (it isn't Apple-notarized). Click Done, then go to
             System Settings → Privacy &amp; Security, scroll down, and click "Open Anyway".
             One time only.
           </p>
@@ -447,6 +455,20 @@
       document.querySelectorAll('.scramble-in').forEach(scrambleIn);
     }, 800);
   });
+
+  // ───── Terminal install command ─────
+  // curl doesn't set the com.apple.quarantine attribute, so this path skips Gatekeeper entirely.
+  const zipUrl = location.protocol === 'file:'
+    ? 'https://YOUR-DOMAIN/downloads/MacDroid.app.zip'
+    : new URL('downloads/MacDroid.app.zip', location.href).href;
+  const installCmd = `curl -L ${zipUrl} -o /tmp/MacDroid.zip && ditto -xk /tmp/MacDroid.zip /Applications && rm /tmp/MacDroid.zip && open /Applications/MacDroid.app`;
+  document.getElementById('installCmd').textContent = installCmd;
+  function copyInstallCmd(btn) {
+    navigator.clipboard.writeText(installCmd).then(() => {
+      btn.textContent = 'copied';
+      setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+    });
+  }
 
   // ───── Menu toggle ─────
   let menuOpen = false;
