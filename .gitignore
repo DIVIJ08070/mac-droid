@@ -8,3 +8,5 @@ macos/.build/
 android/keystore/
 android/keystore.properties
 .claude/settings.local.json
+
+android/.kotlin/
