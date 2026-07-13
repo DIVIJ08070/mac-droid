@@ -1,0 +1,729 @@
+package com.macdroid.app
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import android.provider.OpenableColumns
+import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.security.SecureRandom
+
+enum class ConnectionState { DISCONNECTED, CONNECTING, PAIRING, PAIRED }
+
+/** Owns the TCP link to the Mac. Singleton so the service and UI share one connection. */
+object ConnectionManager {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var connectionJob: Job? = null
+    private var heartbeatJob: Job? = null
+    private var socket: Socket? = null
+    private var writer: PrintWriter? = null
+    private lateinit var appContext: Context
+
+    // Incremented on every connect/disconnect; a connection attempt that finds the
+    // session id has moved on knows it was superseded and must not touch shared state.
+    private var sessionId = 0
+
+    private var currentMac: DiscoveredMac? = null
+    private var usedTokenForPairing = false
+    private val pendingShares = mutableListOf<Uri>()
+
+    private val _state = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val state: StateFlow<ConnectionState> = _state
+
+    private val _macName = MutableStateFlow<String?>(null)
+    val macName: StateFlow<String?> = _macName
+
+    private val _pairCode = MutableStateFlow<String?>(null)
+    val pairCode: StateFlow<String?> = _pairCode
+
+    private val _lastReceivedClipboard = MutableStateFlow<String?>(null)
+    val lastReceivedClipboard: StateFlow<String?> = _lastReceivedClipboard
+
+    private val _transferStatus = MutableStateFlow<String?>(null)
+    val transferStatus: StateFlow<String?> = _transferStatus
+
+    private val _log = MutableStateFlow<List<String>>(emptyList())
+    val log: StateFlow<List<String>> = _log
+
+    private val _micStreaming = MutableStateFlow(false)
+    val micStreaming: StateFlow<Boolean> = _micStreaming
+
+    private val _speakerPlaying = MutableStateFlow(false)
+    val speakerPlaying: StateFlow<Boolean> = _speakerPlaying
+
+    /** The page currently open in the Mac's browser (url to title), for tab sync. */
+    private val _macTab = MutableStateFlow<Pair<String, String>?>(null)
+    val macTab: StateFlow<Pair<String, String>?> = _macTab
+
+    private var micStreamer: MicStreamer? = null
+    private var speakerPlayer: SpeakerPlayer? = null
+
+    // Touchpad events must stay ordered, so a single consumer drains this queue.
+    private val inputChannel =
+        Channel<Packet>(capacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        createNotificationChannel()
+        scope.launch {
+            for (packet in inputChannel) {
+                try {
+                    writer?.println(packet.encode())
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    /** Low-latency touchpad events; dropped silently when not connected. */
+    fun sendInput(
+        action: String,
+        dx: Float = 0f,
+        dy: Float = 0f,
+        button: String? = null,
+        gesture: String? = null,
+    ) {
+        if (_state.value != ConnectionState.PAIRED) return
+        val body = JSONObject().put("a", action)
+        if (dx != 0f) body.put("dx", dx.toDouble())
+        if (dy != 0f) body.put("dy", dy.toDouble())
+        button?.let { body.put("b", it) }
+        gesture?.let { body.put("g", it) }
+        inputChannel.trySend(Packet("input", body))
+    }
+
+    // MARK: momentum scrolling
+
+    private var flingJob: Job? = null
+
+    /** Keep scrolling with decay after a two-finger fling, like a real trackpad. */
+    fun startScrollFling(vxPxPerMs: Float, vyPxPerMs: Float) {
+        cancelScrollFling()
+        flingJob = scope.launch {
+            var vx = vxPxPerMs.coerceIn(-4f, 4f)
+            var vy = vyPxPerMs.coerceIn(-4f, 4f)
+            while (kotlin.math.abs(vx) > 0.04f || kotlin.math.abs(vy) > 0.04f) {
+                sendInput("sc", vx * 16, vy * 16)
+                vx *= 0.93f
+                vy *= 0.93f
+                kotlinx.coroutines.delay(16)
+            }
+        }
+    }
+
+    fun cancelScrollFling() {
+        flingJob?.cancel()
+        flingJob = null
+    }
+
+    // MARK: remembered pairing
+
+    private val prefs
+        get() = appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
+
+    fun rememberedMacName(): String? = prefs.getString("pairedMacName", null)
+
+    fun hasRememberedMac(): Boolean = rememberedMacName() != null && prefs.getString("pairToken", null) != null
+
+    fun forgetMac() {
+        prefs.edit().remove("pairedMacName").remove("pairToken").apply()
+        appContext.stopService(Intent(appContext, ConnectionService::class.java))
+        disconnect()
+        appendLog("Forgot remembered Mac")
+    }
+
+    // MARK: connection lifecycle
+
+    @Synchronized
+    fun connect(mac: DiscoveredMac) {
+        // Already connected or connecting to this Mac? Don't tear down a live
+        // session — this is how the reconnect service and a manual tap can race.
+        if (_state.value != ConnectionState.DISCONNECTED && currentMac?.name == mac.name) {
+            return
+        }
+        disconnect()
+        val mySession = sessionId
+        currentMac = mac
+        _state.value = ConnectionState.CONNECTING
+        _macName.value = mac.name
+        appendLog("Connecting to ${mac.name} (${mac.host}:${mac.port})")
+
+        connectionJob = scope.launch {
+            var s: Socket? = null
+            try {
+                s = Socket()
+                s.connect(InetSocketAddress(mac.host, mac.port), 5000)
+                s.tcpNoDelay = true
+                s.keepAlive = true
+
+                synchronized(this@ConnectionManager) {
+                    if (mySession != sessionId) {
+                        s.close()
+                        return@launch
+                    }
+                    socket = s
+                    writer = PrintWriter(s.getOutputStream(), true)
+                }
+
+                send(Packet("identity", JSONObject().apply {
+                    put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
+                    put("device", "android")
+                }))
+
+                sendPairRequest(mac)
+                startHeartbeat(mySession)
+
+                val reader = BufferedReader(InputStreamReader(s.getInputStream()))
+                while (mySession == sessionId) {
+                    val line = reader.readLine() ?: break
+                    Packet.decode(line)?.let { handle(it) }
+                }
+            } catch (e: Exception) {
+                if (mySession == sessionId) appendLog("Connection error: ${e.message}")
+            } finally {
+                cleanup(mySession, s)
+            }
+        }
+    }
+
+    /**
+     * Periodically writes a no-op packet so a dead link (Mac app quit, Wi-Fi drop)
+     * is detected within seconds instead of whenever the OS gives up on the socket.
+     */
+    private fun startHeartbeat(mySession: Int) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (mySession == sessionId) {
+                kotlinx.coroutines.delay(15_000)
+                if (mySession != sessionId) break
+                val w = writer ?: break
+                w.println(Packet("heartbeat").encode())
+                if (w.checkError()) {
+                    appendLog("Link to Mac lost")
+                    try {
+                        socket?.close() // unblocks the reader; cleanup follows there
+                    } catch (_: Exception) {
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    private fun sendPairRequest(mac: DiscoveredMac) {
+        val token = prefs.getString("pairToken", null)
+        if (token != null && rememberedMacName() == mac.name) {
+            usedTokenForPairing = true
+            _state.value = ConnectionState.PAIRING
+            send(Packet("pair.request", JSONObject().put("token", token)))
+            appendLog("Reconnecting with remembered pairing")
+        } else {
+            usedTokenForPairing = false
+            val code = generatePairCode()
+            _pairCode.value = code
+            _state.value = ConnectionState.PAIRING
+            send(Packet("pair.request", JSONObject().put("code", code)))
+            appendLog("Sent pairing request, code $code")
+        }
+    }
+
+    /** User-initiated disconnect: also stops the background service so it doesn't reconnect. */
+    fun userDisconnect() {
+        appContext.stopService(Intent(appContext, ConnectionService::class.java))
+        disconnect()
+    }
+
+    @Synchronized
+    fun disconnect() {
+        sessionId++
+        micStreamer?.stop()
+        micStreamer = null
+        _micStreaming.value = false
+        stopSpeaker()
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        connectionJob?.cancel()
+        connectionJob = null
+        try {
+            socket?.close()
+        } catch (_: Exception) {
+        }
+        socket = null
+        writer = null
+        _pairCode.value = null
+        _transferStatus.value = null
+        _macTab.value = null
+        if (_state.value != ConnectionState.DISCONNECTED) {
+            _state.value = ConnectionState.DISCONNECTED
+            appendLog("Disconnected")
+        }
+    }
+
+    // MARK: actions
+
+    fun sendClipboard() {
+        val clipboardManager =
+            appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(appContext)?.toString()
+        if (text.isNullOrEmpty()) {
+            appendLog("Clipboard is empty — nothing to send")
+            return
+        }
+        scope.launch {
+            send(Packet("clipboard", JSONObject().put("content", text)))
+            appendLog("Clipboard → Mac (${text.length} chars)")
+        }
+    }
+
+    fun pingMac() {
+        scope.launch {
+            send(Packet("ping", JSONObject().put("message", "Ping from phone")))
+            appendLog("Ping → Mac")
+        }
+    }
+
+    fun sendCommand(action: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("command", JSONObject().put("action", action)))
+            appendLog("Command → Mac: $action")
+        }
+    }
+
+    /** Tab sync: tell the Mac which page is open in the phone's browser. */
+    fun sendBrowse(url: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("browse", JSONObject().apply {
+                put("url", url)
+                put("source", "phone")
+            }))
+        }
+    }
+
+    fun sendUrl(url: String) {
+        if (_state.value != ConnectionState.PAIRED) {
+            appendLog("Not connected — link not sent")
+            return
+        }
+        scope.launch {
+            send(Packet("url", JSONObject().put("url", url)))
+            appendLog("Link → Mac: $url")
+        }
+    }
+
+    /** Send whatever URL is on the phone's clipboard to open on the Mac. */
+    fun sendClipboardUrl() {
+        val clipboardManager =
+            appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboardManager.primaryClip?.getItemAt(0)
+            ?.coerceToText(appContext)?.toString()?.trim()
+        if (text.isNullOrEmpty() || !(text.startsWith("http://") || text.startsWith("https://"))) {
+            appendLog("Clipboard doesn't contain a link")
+            return
+        }
+        sendUrl(text)
+    }
+
+    // MARK: microphone streaming (phone → Mac)
+
+    fun startMic() {
+        if (_state.value != ConnectionState.PAIRED || _micStreaming.value) return
+        val streamer = MicStreamer(
+            scope = scope,
+            onOffer = { sampleRate, channels, port ->
+                send(Packet("audio.start", JSONObject().apply {
+                    put("direction", "mic")
+                    put("sampleRate", sampleRate)
+                    put("channels", channels)
+                    put("port", port)
+                }))
+            },
+            onLog = ::appendLog,
+            onStopped = { _micStreaming.value = false },
+        )
+        micStreamer = streamer
+        _micStreaming.value = true
+        streamer.start()
+    }
+
+    fun stopMic() {
+        if (micStreamer == null) return
+        scope.launch {
+            send(Packet("audio.stop", JSONObject().put("direction", "mic")))
+        }
+        micStreamer?.stop()
+        micStreamer = null
+        _micStreaming.value = false
+        appendLog("Mic streaming stopped")
+    }
+
+    fun stopSpeaker() {
+        speakerPlayer?.stop()
+        speakerPlayer = null
+        _speakerPlaying.value = false
+    }
+
+    /** Send files now if paired, otherwise queue them until pairing completes. */
+    fun shareFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        if (_state.value == ConnectionState.PAIRED) {
+            uris.forEach { sendFile(it) }
+        } else {
+            synchronized(pendingShares) { pendingShares += uris }
+            appendLog("${uris.size} file(s) queued — will send once connected")
+        }
+    }
+
+    // MARK: file transfer — sending (phone → Mac)
+
+    private fun sendFile(uri: Uri) {
+        scope.launch {
+            try {
+                val resolver = appContext.contentResolver
+                var name = "file"
+                var size = -1L
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex >= 0) name = cursor.getString(nameIndex) ?: name
+                        if (sizeIndex >= 0) size = cursor.getLong(sizeIndex)
+                    }
+                }
+                if (size < 0) {
+                    appendLog("Cannot determine size of $name — skipping")
+                    return@launch
+                }
+
+                ServerSocket(0).use { server ->
+                    server.soTimeout = 15000
+                    send(Packet("file.offer", JSONObject().apply {
+                        put("name", name)
+                        put("size", size)
+                        put("port", server.localPort)
+                    }))
+                    _transferStatus.value = "Sending $name…"
+                    appendLog("Offering $name (${size / 1024} KB)")
+
+                    server.accept().use { client ->
+                        resolver.openInputStream(uri)?.use { input ->
+                            val out = client.getOutputStream()
+                            val buf = ByteArray(65536)
+                            var sent = 0L
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                sent += n
+                                _transferStatus.value =
+                                    "Sending $name… ${(sent * 100 / size).coerceAtMost(100)}%"
+                            }
+                            out.flush()
+                        }
+                    }
+                }
+                appendLog("Sent $name ✓")
+            } catch (e: Exception) {
+                appendLog("Send failed: ${e.message}")
+            } finally {
+                _transferStatus.value = null
+            }
+        }
+    }
+
+    // MARK: file transfer — receiving (Mac → phone)
+
+    private fun receiveFile(name: String, size: Long, port: Int) {
+        val host = currentMac?.host ?: return
+        scope.launch {
+            var savedUri: Uri? = null
+            try {
+                _transferStatus.value = "Receiving $name…"
+                appendLog("Receiving $name (${size / 1024} KB)")
+
+                val resolver = appContext.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name.replace("/", "_"))
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("MediaStore insert failed")
+                savedUri = uri
+
+                Socket().use { transferSocket ->
+                    transferSocket.connect(InetSocketAddress(host, port), 10000)
+                    resolver.openOutputStream(uri)?.use { out ->
+                        val input = transferSocket.getInputStream()
+                        val buf = ByteArray(65536)
+                        var received = 0L
+                        while (received < size) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            received += n
+                            _transferStatus.value =
+                                "Receiving $name… ${(received * 100 / size).coerceAtMost(100)}%"
+                        }
+                        if (received < size) throw IllegalStateException("Connection closed early")
+                    }
+                }
+
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                appendLog("Received $name → Downloads ✓")
+                showNotification("File received", "$name saved to Downloads")
+            } catch (e: Exception) {
+                appendLog("Receive failed: ${e.message}")
+                savedUri?.let { appContext.contentResolver.delete(it, null, null) }
+            } finally {
+                _transferStatus.value = null
+            }
+        }
+    }
+
+    // MARK: packet handling
+
+    private fun handle(packet: Packet) {
+        when (packet.type) {
+            "identity" -> {
+                packet.body.optString("name").takeIf { it.isNotEmpty() }?.let { _macName.value = it }
+            }
+
+            "pair.accept" -> {
+                packet.body.optString("token").takeIf { it.isNotEmpty() }?.let { token ->
+                    prefs.edit()
+                        .putString("pairToken", token)
+                        .putString("pairedMacName", _macName.value ?: currentMac?.name)
+                        .apply()
+                }
+                _pairCode.value = null
+                _state.value = ConnectionState.PAIRED
+                appendLog("Paired with ${_macName.value}")
+                startBackgroundService()
+                flushPendingShares()
+            }
+
+            "pair.reject" -> {
+                if (usedTokenForPairing) {
+                    // Mac no longer recognizes our token — fall back to the code flow.
+                    prefs.edit().remove("pairToken").apply()
+                    appendLog("Remembered pairing rejected — asking with a code instead")
+                    currentMac?.let { sendPairRequest(it) }
+                } else {
+                    appendLog("Pairing rejected by Mac")
+                    disconnect()
+                }
+            }
+
+            "clipboard" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val content = packet.body.optString("content")
+                val clipboardManager =
+                    appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("MacDroid", content))
+                _lastReceivedClipboard.value = content
+                appendLog("Clipboard ← Mac (${content.length} chars)")
+            }
+
+            "ping" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                appendLog("Ping from Mac")
+                showNotification("MacDroid", packet.body.optString("message", "Ping from your Mac"), sound = true)
+            }
+
+            "file.offer" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val name = packet.body.optString("name", "file")
+                val size = packet.body.optLong("size", -1)
+                val port = packet.body.optInt("port", -1)
+                if (size >= 0 && port > 0) receiveFile(name, size, port)
+            }
+
+            "url" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val url = packet.body.optString("url")
+                if (url.startsWith("http://") || url.startsWith("https://")) openUrl(url)
+            }
+
+            "audio.start" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                if (packet.body.optString("direction") != "speaker") return
+                val host = currentMac?.host ?: return
+                val port = packet.body.optInt("port", -1)
+                if (port <= 0) return
+                stopSpeaker()
+                val player = SpeakerPlayer(
+                    scope = scope,
+                    onLog = ::appendLog,
+                    onStopped = { _speakerPlaying.value = false },
+                )
+                speakerPlayer = player
+                _speakerPlaying.value = true
+                player.start(
+                    host, port,
+                    packet.body.optInt("sampleRate", 48000),
+                    packet.body.optInt("channels", 2)
+                )
+            }
+
+            "audio.stop" -> {
+                if (packet.body.optString("direction") == "speaker") {
+                    stopSpeaker()
+                    appendLog("Mac audio stream stopped")
+                }
+            }
+
+            "browse" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val url = packet.body.optString("url")
+                if (url.startsWith("http")) {
+                    _macTab.value = url to packet.body.optString("title")
+                }
+            }
+        }
+    }
+
+    private fun openUrl(url: String) {
+        appendLog("Link from Mac: $url")
+        val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (MainActivity.isInForeground) {
+            try {
+                appContext.startActivity(viewIntent)
+                return
+            } catch (_: Exception) {
+            }
+        }
+        // App is backgrounded (Android blocks activity starts) — notify instead.
+        val manager =
+            appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val pending = android.app.PendingIntent.getActivity(
+            appContext, url.hashCode(), viewIntent, android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setContentTitle("Link from your Mac")
+            .setContentText(url)
+            .setContentIntent(pending)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        manager.notify(url.hashCode(), notification)
+    }
+
+    private fun flushPendingShares() {
+        val toSend: List<Uri>
+        synchronized(pendingShares) {
+            toSend = pendingShares.toList()
+            pendingShares.clear()
+        }
+        toSend.forEach { sendFile(it) }
+    }
+
+    private fun startBackgroundService() {
+        val intent = Intent(appContext, ConnectionService::class.java)
+        appContext.startForegroundService(intent)
+    }
+
+    // MARK: plumbing
+
+    private fun send(packet: Packet) {
+        writer?.println(packet.encode())
+    }
+
+    /** Tear down after a connection ends — but only if this session wasn't already superseded. */
+    private fun cleanup(mySession: Int, s: Socket?) {
+        try {
+            s?.close()
+        } catch (_: Exception) {
+        }
+        synchronized(this) {
+            if (mySession != sessionId) return
+            sessionId++
+            micStreamer?.stop()
+            micStreamer = null
+            _micStreaming.value = false
+            stopSpeaker()
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+            socket = null
+            writer = null
+            _pairCode.value = null
+            _transferStatus.value = null
+            if (_state.value != ConnectionState.DISCONNECTED) {
+                _state.value = ConnectionState.DISCONNECTED
+                appendLog("Disconnected")
+            }
+        }
+    }
+
+    private fun generatePairCode(): String =
+        SecureRandom().nextInt(1_000_000).toString().padStart(6, '0')
+
+    private fun createNotificationChannel() {
+        val manager =
+            appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "MacDroid", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Pings and events from your Mac"
+            }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                SERVICE_CHANNEL_ID, "MacDroid connection", NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps the connection to your Mac alive"
+            }
+        )
+    }
+
+    private fun showNotification(title: String, message: String, sound: Boolean = false) {
+        val manager =
+            appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+        if (sound) {
+            builder.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+        }
+        manager.notify(System.currentTimeMillis().toInt(), builder.build())
+    }
+
+    private fun appendLog(message: String) {
+        android.util.Log.d("MacDroid", message)
+        val time = android.text.format.DateFormat.format("HH:mm:ss", System.currentTimeMillis())
+        _log.value = (_log.value + "[$time] $message").takeLast(200)
+    }
+
+    const val CHANNEL_ID = "macdroid"
+    const val SERVICE_CHANNEL_ID = "macdroid_service"
+}

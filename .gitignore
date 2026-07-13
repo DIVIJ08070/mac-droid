@@ -1,0 +1,10 @@
+.DS_Store
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+macos/.build/
+android/keystore/
+android/keystore.properties
+.claude/settings.local.json

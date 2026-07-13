@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MacDroid — Your Mac and Android. One Network.</title>
+<meta name="description" content="MacDroid links your Mac and Android over your own Wi-Fi: clipboard, files, trackpad, audio and tab handoff. No cloud. No account.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      fontFamily: {
+        sans: ['"Space Mono"', 'monospace'],
+        serif: ['"Space Mono"', 'monospace'],
+        mono: ['"Space Mono"', 'monospace'],
+      },
+    },
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Anton+SC&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<style>
+  :root {
+    --font-sans: "Space Mono", monospace;
+    --font-serif: "Space Mono", monospace;
+    --font-mono: "Space Mono", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: #000; color: #fff;
+    overflow-x: hidden; overflow-y: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: "Space Mono", monospace;
+    scroll-behavior: smooth;
+  }
+
+  /* Dot grid overlay */
+  .dot-grid {
+    background-image: radial-gradient(#ffffff 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.05;
+  }
+
+  /* Watermark text */
+  .watermark {
+    font-family: "Anton SC", sans-serif;
+    font-size: clamp(120px, 30vw, 521px);
+    text-transform: uppercase;
+    letter-spacing: -4px;
+    opacity: 0.10;
+    background: radial-gradient(circle, rgba(142,127,148,0) 0%, #8E7F94 70%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* Entrance fade */
+  .entrance { opacity: 0; transition: opacity 1s ease; }
+  .entrance.on { opacity: 1; }
+  .entrance-nav { opacity: 0; transition: opacity 0.8s ease; }
+  .entrance-nav.on { opacity: 1; }
+
+  /* Fade-up on scroll (whileInView equivalent) */
+  [data-inview] {
+    opacity: 0; transform: translateY(30px);
+    transition: opacity 1s cubic-bezier(0.215,0.61,0.355,1), transform 1s cubic-bezier(0.215,0.61,0.355,1);
+    transition-delay: var(--d, 0ms);
+  }
+  [data-inview].in-view { opacity: 1; transform: translateY(0); }
+
+  /* Hero description fade-up */
+  .fade-up-hero {
+    opacity: 0; transform: translateY(25px);
+    transition: opacity 0.9s cubic-bezier(0.215,0.61,0.355,1) 0.2s, transform 0.9s cubic-bezier(0.215,0.61,0.355,1) 0.2s;
+  }
+  .entrance.on .fade-up-hero { opacity: 1; transform: translateY(0); }
+
+  /* Expanding menu pill */
+  .menu-pill {
+    width: 48px;
+    transition: width 0.55s cubic-bezier(0.34, 1.3, 0.5, 1);
+    overflow: hidden;
+  }
+  .menu-pill.open { width: 290px; }
+  .menu-links { opacity: 0; transform: translateX(15px); transition: opacity 0.35s ease 0.1s, transform 0.35s ease 0.1s; pointer-events: none; }
+  .menu-pill.open .menu-links { opacity: 1; transform: translateX(0); pointer-events: auto; }
+  .menu-pill .burger-btn { width: 48px; height: 48px; border-radius: 14px; transition: all 0.3s ease; flex: none; }
+  .menu-pill.open .burger-btn { width: 36px; height: 36px; border-radius: 11px; margin-left: 6px; background: rgba(255,255,255,0.10); }
+  .menu-pill.open .burger-btn:hover { background: rgba(255,255,255,0.20); }
+
+  /* Mobile pills */
+  .m-logo-pill { max-width: 200px; transition: max-width 0.55s cubic-bezier(0.34,1.3,0.5,1), opacity .3s ease, padding .4s ease; overflow: hidden; }
+  .m-logo-pill.hide { max-width: 0; opacity: 0; padding-left: 0; padding-right: 0; }
+  .m-menu-pill { max-width: 36px; transition: max-width 0.55s cubic-bezier(0.34,1.3,0.5,1), flex-grow 0.55s cubic-bezier(0.34,1.3,0.5,1); overflow: hidden; }
+  .m-menu-pill.open { max-width: 100%; flex-grow: 1; }
+  .m-menu-links { opacity: 0; transform: translateX(15px); transition: opacity .35s ease .1s, transform .35s ease .1s; pointer-events: none; }
+  .m-menu-pill.open .m-menu-links { opacity: 1; transform: translateX(0); pointer-events: auto; }
+
+  /* Squash hamburger */
+  .burger { position: relative; width: 18px; height: 12px; display: block; }
+  .burger span {
+    position: absolute; left: 0; width: 100%; height: 1.5px; background: #fff; border-radius: 2px;
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+  }
+  .burger span:nth-child(1) { top: 0; }
+  .burger span:nth-child(2) { top: 5.25px; }
+  .burger span:nth-child(3) { bottom: 0; }
+  .burger.open span:nth-child(1) { transform: translateY(5.25px) rotate(45deg); }
+  .burger.open span:nth-child(2) { opacity: 0; transform: scaleX(0.3); }
+  .burger.open span:nth-child(3) { transform: translateY(-5.25px) rotate(-45deg); }
+  .burger.sm { width: 15px; height: 10px; }
+  .burger.sm span { height: 1.2px; }
+  .burger.sm span:nth-child(2) { top: 4.4px; }
+  .burger.sm.open span:nth-child(1) { transform: translateY(4.4px) rotate(45deg); }
+  .burger.sm.open span:nth-child(3) { transform: translateY(-4.4px) rotate(-45deg); }
+
+  /* Cinematic scroll text */
+  .persp { perspective: 400px; }
+  #cineText { will-change: transform, opacity; }
+
+  /* Buttons */
+  .pill-hover { transition: transform .2s ease, background-color .2s ease; }
+  .pill-hover:hover { transform: scale(1.02); background: rgba(255,255,255,0.22); }
+  .pill-hover:active { transform: scale(0.98); }
+  .dl-btn { transition: transform .2s ease, background-color .2s ease; }
+  .dl-btn:hover { transform: scale(1.03); background: #e2e2e6; }
+  .dl-btn:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+
+<!-- ══════════ NAVBAR ══════════ -->
+<nav id="navbar" class="entrance-nav fixed top-0 left-0 right-0 h-20 z-50 flex items-center justify-between px-4 sm:px-6 md:px-8">
+
+  <!-- Desktop -->
+  <div class="hidden sm:flex items-center gap-2">
+    <a href="#" class="pill-hover flex items-center gap-2.5 h-12 px-5 bg-white/15 backdrop-blur-md rounded-[14px]">
+      <svg width="18" height="18" viewBox="-50 -50 100 100" fill="white">
+        <g id="q"><path d="M 1.5,23 L 1.5,33 C 1.5,38.5 6,43 11.5,43 L 16.5,43 C 22,43 26.5,38.5 26.5,33 Q 28,28 33,26.5 C 38.5,26.5 43,22 43,16.5 L 43,11.5 C 43,6 38.5,1.5 33,1.5 L 23,1.5 Q 12,12 1.5,23 Z"/></g>
+        <use href="#q" transform="rotate(90)"/><use href="#q" transform="rotate(180)"/><use href="#q" transform="rotate(270)"/>
+      </svg>
+      <span class="text-[16px] font-medium tracking-tight text-white">MacDroid</span>
+    </a>
+    <div id="menuPill" class="menu-pill flex items-center h-12 bg-white/15 backdrop-blur-md rounded-[14px]">
+      <button class="burger-btn flex items-center justify-center" onclick="toggleMenu()" aria-label="Menu">
+        <span class="burger" id="burgerD"><span></span><span></span><span></span></button></span>
+      </button>
+      <div class="menu-links flex items-center gap-6 pl-5">
+        <a href="#tech" class="scramble-hover text-[16px] font-normal text-white/85 hover:text-white" data-text="Features">Features</a>
+        <a href="#setup" class="scramble-hover text-[16px] font-normal text-white/85 hover:text-white" data-text="Setup">Setup</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile -->
+  <div class="flex sm:hidden items-center gap-2 flex-1 mr-2">
+    <a href="#" id="mLogoPill" class="m-logo-pill flex items-center gap-2 h-9 px-3.5 bg-white/15 backdrop-blur-md rounded-[10px]">
+      <svg width="14" height="14" viewBox="-50 -50 100 100" fill="white">
+        <use href="#q"/><use href="#q" transform="rotate(90)"/><use href="#q" transform="rotate(180)"/><use href="#q" transform="rotate(270)"/>
+      </svg>
+      <span class="text-[13px] font-medium tracking-tight text-white whitespace-nowrap">MacDroid</span>
+    </a>
+    <div id="mMenuPill" class="m-menu-pill flex items-center h-9 bg-white/15 backdrop-blur-md rounded-[10px]">
+      <button class="w-9 h-9 flex items-center justify-center flex-none" onclick="toggleMenu()" aria-label="Menu">
+        <span class="burger sm" id="burgerM"><span></span><span></span><span></span></span>
+      </button>
+      <div class="m-menu-links flex items-center gap-4 pl-2 pr-4">
+        <a href="#tech" class="text-[13px] text-white/85 whitespace-nowrap" onclick="toggleMenu()">Features</a>
+        <a href="#setup" class="text-[13px] text-white/85 whitespace-nowrap" onclick="toggleMenu()">Setup</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Download -->
+  <a href="downloads/MacDroid.app.zip" download
+     class="dl-btn scramble-hover flex items-center gap-2 h-9 sm:h-12 px-3.5 sm:px-6 bg-white rounded-full text-black text-[13px] sm:text-[16px] font-medium"
+     data-text="Download">
+    <i class="bi bi-apple"></i>
+    <span class="scramble-target">Download</span>
+  </a>
+</nav>
+
+<!-- ══════════ SECTION 1: HERO ══════════ -->
+<section class="relative h-screen overflow-hidden">
+  <video id="heroVideo" class="absolute inset-0 w-full h-full object-cover" muted playsinline preload="auto"
+         src="assets/hero.mp4"></video>
+  <div class="dot-grid absolute inset-0 pointer-events-none"></div>
+  <div class="absolute inset-0 flex items-center justify-center pointer-events-none" style="transform: translateY(50px)">
+    <span class="watermark">MACDROID</span>
+  </div>
+
+  <div id="heroContent" class="entrance relative z-10 h-full flex flex-col px-4 sm:px-6 md:px-8 pt-20 sm:pt-24 pb-8 sm:pb-12">
+    <div class="flex-1"></div>
+    <div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div class="flex flex-col gap-4">
+        <h1 class="text-white font-light leading-[0.95] tracking-[-0.03em] text-[clamp(40px,8vw,100px)]">
+          <span class="scramble-in" data-text="Your Mac" data-delay="200">&nbsp;</span><br>
+          <span class="scramble-in" data-text="And Android" data-delay="500">&nbsp;</span>
+        </h1>
+        <p class="fade-up-hero max-w-sm text-[13px] sm:text-[15px] text-white/60 leading-relaxed">
+          Built for the gap between macOS and Android. MacDroid continuously carries your clipboard,
+          files, audio and input across both devices as a single adaptive connection layer — on your own Wi-Fi.
+        </p>
+      </div>
+      <h1 class="text-white font-light leading-[0.95] tracking-[-0.03em] text-[clamp(40px,8vw,100px)] text-left md:text-right">
+        <span class="scramble-in" data-text="One" data-delay="700">&nbsp;</span><br>
+        <span class="scramble-in" data-text="Network" data-delay="1000">&nbsp;</span>
+      </h1>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SECTION 2: CINEMATIC TEXT ══════════ -->
+<section id="story" class="relative h-screen overflow-hidden">
+  <video class="absolute inset-0 w-full h-full object-cover" autoplay muted loop playsinline
+         src="assets/story.mp4"></video>
+  <div class="absolute top-0 left-0 right-0 h-[180px] z-10 pointer-events-none" style="background: linear-gradient(to bottom, #010103, transparent)"></div>
+  <div class="persp relative z-10 h-full flex items-center justify-center">
+    <p id="cineText" class="max-w-5xl font-sans font-normal text-[22px] sm:text-[30px] md:text-[36px] lg:text-[42px] text-white leading-[1.35] tracking-[-0.02em] select-none px-6 sm:px-12 text-center">
+      A connection layer built on your own local network. MacDroid turns two separate devices into one
+      continuous machine. Every copy becomes a shared clipboard. Every file arrives before you look up.
+      Every gesture on glass moves a cursor on the desk. No cloud. No account. No wires.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ SECTION 3: METRICS ══════════ -->
+<section id="metrics" class="relative min-h-screen overflow-hidden flex items-center">
+  <video class="absolute inset-0 w-full h-full object-cover" autoplay muted loop playsinline
+         src="assets/metrics.mp4"></video>
+  <div class="relative z-10 w-full max-w-6xl mx-auto pt-32 pb-32 px-6">
+    <p data-inview class="text-white/40 text-[13px] sm:text-[14px] tracking-[0.2em] uppercase mb-20 text-center">Performance Metrics</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-16 md:gap-8 text-center">
+      <div data-inview style="--d:0ms">
+        <div class="text-white text-[clamp(48px,10vw,96px)] font-light tracking-[-0.04em] leading-none">&lt;10ms</div>
+        <div class="text-white/40 text-[13px] sm:text-[15px] mt-4 tracking-wide">Wi-Fi Latency</div>
+      </div>
+      <div data-inview style="--d:150ms">
+        <div class="text-white text-[clamp(48px,10vw,96px)] font-light tracking-[-0.04em] leading-none">100%</div>
+        <div class="text-white/40 text-[13px] sm:text-[15px] mt-4 tracking-wide">Local Traffic</div>
+      </div>
+      <div data-inview style="--d:300ms">
+        <div class="text-white text-[clamp(48px,10vw,96px)] font-light tracking-[-0.04em] leading-none">0</div>
+        <div class="text-white/40 text-[13px] sm:text-[15px] mt-4 tracking-wide">Cloud Servers</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SECTION 4: TECHNOLOGY ══════════ -->
+<section id="tech" class="relative h-screen overflow-hidden">
+  <video class="absolute inset-0 w-full h-full object-cover" autoplay muted loop playsinline
+         src="assets/tech.mp4"></video>
+  <div class="relative z-10 h-full flex flex-col px-8 sm:px-12 md:px-16 py-12 sm:py-16 pt-24">
+    <div class="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+      <h2 data-inview class="text-white font-light text-[clamp(36px,8vw,72px)] leading-[0.95] tracking-[-0.03em]">
+        Instant<br>Connection
+      </h2>
+      <p data-inview style="--d:200ms" class="text-white/50 text-[13px] sm:text-[15px] leading-relaxed max-w-xs md:text-right md:pt-2">
+        Pair once with a 6-digit code. From there your phone finds your Mac and reconnects
+        automatically, in the background, every time you come home.
+      </p>
+    </div>
+    <div class="flex-1"></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-6">
+      <div data-inview style="--d:300ms">
+        <h3 class="text-white text-[14px] sm:text-[16px] font-normal mb-2">Clipboard Sync</h3>
+        <p class="text-white/40 text-[12px] sm:text-[14px] leading-relaxed">Copy on one device, paste on the other. Instant, both directions.</p>
+      </div>
+      <div data-inview style="--d:400ms">
+        <h3 class="text-white text-[14px] sm:text-[16px] font-normal mb-2">File Drop</h3>
+        <p class="text-white/40 text-[12px] sm:text-[14px] leading-relaxed">Share sheet to the Mac. Drag &amp; drop to the phone. No cables.</p>
+      </div>
+      <div data-inview style="--d:500ms">
+        <h3 class="text-white text-[14px] sm:text-[16px] font-normal mb-2">Full Trackpad</h3>
+        <p class="text-white/40 text-[12px] sm:text-[14px] leading-relaxed">Gestures, momentum scrolling, Spaces — your phone as Mac input.</p>
+      </div>
+      <div data-inview style="--d:600ms">
+        <h3 class="text-white text-[14px] sm:text-[16px] font-normal mb-2">Audio Bridge</h3>
+        <p class="text-white/40 text-[12px] sm:text-[14px] leading-relaxed">Mac sound through the phone's Bluetooth. Phone mic into the Mac.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SECTION 5: SETUP GUIDE (pure black) ══════════ -->
+<section id="setup" class="relative min-h-screen bg-black flex items-center">
+  <div class="w-full max-w-3xl mx-auto px-6 py-32">
+    <div data-inview class="text-center mb-20">
+      <p class="text-white/40 text-[13px] sm:text-[14px] tracking-[0.2em] uppercase mb-6">Setup Guide</p>
+      <h2 class="text-white font-light text-[clamp(32px,6vw,56px)] leading-[1.05] tracking-[-0.03em]">
+        Two minutes.<br>Then it's automatic.
+      </h2>
+    </div>
+
+    <div class="flex flex-col gap-12">
+      <div data-inview style="--d:0ms" class="flex gap-6">
+        <span class="text-white/30 text-[15px] pt-0.5">01</span>
+        <div>
+          <h3 class="text-white text-[16px] sm:text-[18px] mb-2">Install on the Mac</h3>
+          <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
+            Download, unzip, move MacDroid.app to Applications. First launch: right-click → Open
+            (the app isn't Apple-notarized — that's all Gatekeeper wants to hear).
+          </p>
+        </div>
+      </div>
+      <div data-inview style="--d:100ms" class="flex gap-6">
+        <span class="text-white/30 text-[15px] pt-0.5">02</span>
+        <div>
+          <h3 class="text-white text-[16px] sm:text-[18px] mb-2">Install on the phone</h3>
+          <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
+            Download the APK and tap it. Allow "install unknown apps" when Android asks — normal
+            for anything outside the Play Store.
+          </p>
+        </div>
+      </div>
+      <div data-inview style="--d:200ms" class="flex gap-6">
+        <span class="text-white/30 text-[15px] pt-0.5">03</span>
+        <div>
+          <h3 class="text-white text-[16px] sm:text-[18px] mb-2">Pair</h3>
+          <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
+            Same Wi-Fi, both apps open. Tap your Mac on the phone, check the 6-digit code matches,
+            click Accept on the Mac. That's the last code you'll ever type.
+          </p>
+        </div>
+      </div>
+      <div data-inview style="--d:300ms" class="flex gap-6">
+        <span class="text-white/30 text-[15px] pt-0.5">04</span>
+        <div>
+          <h3 class="text-white text-[16px] sm:text-[18px] mb-2">Grant as you go</h3>
+          <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
+            Each feature asks for its permission on first use — touchpad wants Accessibility, audio
+            wants Screen &amp; System Audio Recording, tab sync wants Automation. Grant once, forget forever.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div data-inview style="--d:400ms" class="text-center mt-20">
+      <a href="info.html#faq" class="text-white/40 text-[13px] sm:text-[14px] underline underline-offset-4 hover:text-white transition-colors">
+        Full documentation &amp; FAQ →
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ FOOTER ══════════ -->
+<section id="get" class="relative min-h-screen overflow-hidden flex flex-col">
+  <video class="absolute inset-0 w-full h-full object-cover" autoplay muted loop playsinline
+         src="assets/footer.mp4"></video>
+  <div class="absolute top-0 left-0 right-0 h-[180px] z-10 pointer-events-none" style="background: linear-gradient(to bottom, #000, transparent)"></div>
+
+  <div class="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-32 text-center">
+    <h2 data-inview class="text-white font-light text-[clamp(40px,9vw,90px)] leading-[0.95] tracking-[-0.03em] mb-8">
+      Get MacDroid.
+    </h2>
+    <p data-inview style="--d:150ms" class="text-white/50 text-[13px] sm:text-[15px] max-w-md leading-relaxed mb-12">
+      Free &amp; open. macOS 13+ (Intel &amp; Apple Silicon) · Android 10+.
+      Everything stays on your network.
+    </p>
+    <div data-inview style="--d:300ms" class="flex flex-wrap items-center justify-center gap-4">
+      <a href="downloads/MacDroid.app.zip" download
+         class="dl-btn flex items-center gap-2.5 h-12 px-7 bg-white rounded-full text-black text-[15px] font-medium">
+        <i class="bi bi-apple"></i> Download for Mac
+      </a>
+      <a href="downloads/macdroid.apk" download
+         class="pill-hover flex items-center gap-2.5 h-12 px-7 bg-white/15 backdrop-blur-md rounded-full text-white text-[15px]">
+        Download for Android
+      </a>
+    </div>
+  </div>
+
+  <div class="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 sm:px-8 pb-8 text-[12px] text-white/40">
+    <span>MacDroid — one desk, one network.</span>
+    <div class="flex gap-6">
+      <a href="info.html#features" class="hover:text-white transition-colors">Features</a>
+      <a href="info.html#setup" class="hover:text-white transition-colors">Docs</a>
+      <a href="info.html#faq" class="hover:text-white transition-colors">FAQ</a>
+    </div>
+  </div>
+</section>
+
+<script>
+  // ───── ScrambleIn (entrance reveal) ─────
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+~|}{[]:;?><';
+  const rand = () => CHARS[Math.floor(Math.random() * CHARS.length)];
+
+  function scrambleIn(el) {
+    const text = el.dataset.text;
+    const delay = parseInt(el.dataset.delay || '0', 10);
+    setTimeout(() => {
+      let cursor = 0;
+      const timer = setInterval(() => {
+        cursor += 0.5;
+        let out = '';
+        for (let i = 0; i < text.length; i++) {
+          if (text[i] === ' ') { out += ' '; continue; }
+          if (i < cursor) out += text[i];
+          else if (i < cursor + 3) out += rand();
+          else out += '';
+        }
+        el.textContent = out;
+        if (cursor >= text.length) { clearInterval(timer); el.textContent = text; }
+      }, 25);
+    }, delay);
+  }
+
+  // ───── ScrambleText (hover) ─────
+  document.querySelectorAll('.scramble-hover').forEach(el => {
+    const target = el.querySelector('.scramble-target') || el;
+    const original = el.dataset.text || target.textContent;
+    let timer = null;
+    el.addEventListener('mouseenter', () => {
+      let frame = 0;
+      clearInterval(timer);
+      timer = setInterval(() => {
+        frame++;
+        const reveal = Math.floor(frame / 4);
+        let out = '';
+        for (let i = 0; i < original.length; i++) {
+          if (original[i] === ' ') { out += ' '; continue; }
+          out += i < reveal ? original[i] : rand();
+        }
+        target.textContent = out;
+        if (reveal >= original.length) { clearInterval(timer); target.textContent = original; }
+      }, 25);
+    });
+    el.addEventListener('mouseleave', () => { clearInterval(timer); target.textContent = original; });
+  });
+
+  // ───── Entrance ─────
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      document.getElementById('heroContent').classList.add('on');
+      document.getElementById('navbar').classList.add('on');
+      document.querySelectorAll('.scramble-in').forEach(scrambleIn);
+    }, 800);
+  });
+
+  // ───── Menu toggle ─────
+  let menuOpen = false;
+  function toggleMenu() {
+    menuOpen = !menuOpen;
+    document.getElementById('menuPill').classList.toggle('open', menuOpen);
+    document.getElementById('burgerD').classList.toggle('open', menuOpen);
+    document.getElementById('mMenuPill').classList.toggle('open', menuOpen);
+    document.getElementById('burgerM').classList.toggle('open', menuOpen);
+    document.getElementById('mLogoPill').classList.toggle('hide', menuOpen);
+  }
+
+  // ───── Hero video mouse scrub ─────
+  const heroVideo = document.getElementById('heroVideo');
+  let scrubTarget = 0.1, seeking = false, scrubReady = false;
+  heroVideo.addEventListener('loadedmetadata', () => {
+    scrubReady = true;
+    heroVideo.pause();
+    heroVideo.currentTime = 0.1; // force a decoded frame so the hero never paints black
+  });
+  heroVideo.addEventListener('seeked', () => {
+    seeking = false;
+    if (scrubReady && Math.abs(heroVideo.currentTime - scrubTarget) > 0.01) requestSeek();
+  });
+  function requestSeek() {
+    if (seeking || !scrubReady) return;
+    seeking = true;
+    heroVideo.currentTime = scrubTarget;
+  }
+  window.addEventListener('mousemove', e => {
+    if (!scrubReady || !heroVideo.duration) return;
+    const delta = (e.movementX / window.innerWidth) * heroVideo.duration * 0.8;
+    scrubTarget = Math.min(Math.max(scrubTarget + delta, 0), heroVideo.duration - 0.05);
+    requestSeek();
+  });
+
+  // ───── whileInView fade-ups ─────
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) { entry.target.classList.add('in-view'); io.unobserve(entry.target); }
+    });
+  }, { threshold: 0.3 });
+  document.querySelectorAll('[data-inview]').forEach(el => io.observe(el));
+
+  // ───── Cinematic text: spring scroll transform ─────
+  const cine = document.getElementById('cineText');
+  const storySection = document.getElementById('story');
+  let springY = 60, springO = 0;
+  function animateCine() {
+    const rect = storySection.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const progress = Math.min(Math.max((vh - rect.top) / (rect.height + vh), 0), 1);
+    const targetY = 60 + (-180 * progress);
+    const targetO = Math.min(Math.max((progress - 0.3) / 0.2, 0), 1);
+    springY += (targetY - springY) * 0.06;  // spring: low stiffness, heavy mass feel
+    springO += (targetO - springO) * 0.10;
+    cine.style.transform = `rotateX(24deg) translateY(${springY}px) translateZ(15px)`;
+    cine.style.opacity = springO;
+    requestAnimationFrame(animateCine);
+  }
+  requestAnimationFrame(animateCine);
+</script>
+
+</body>
+</html>

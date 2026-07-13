@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MacDroid — Connect your Mac and Android</title>
+<meta name="description" content="MacDroid links your Mac and Android phone over Wi-Fi: shared clipboard, file transfer, trackpad, audio streaming, tab handoff and more. Free, open, no cloud.">
+<style>
+  :root {
+    --bg: #0b0b12;
+    --surface: #15151f;
+    --surface2: #1c1c29;
+    --text: #f2f2f7;
+    --muted: #9a9aad;
+    --accent: #6c5ce7;
+    --accent2: #8e7bff;
+    --green: #34c759;
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f6fa;
+      --surface: #ffffff;
+      --surface2: #eeeef6;
+      --text: #16161d;
+      --muted: #5c5c6e;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+  .logo { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent2); }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+  nav a:hover { color: var(--text); }
+
+  header.hero { text-align: center; padding: 72px 0 56px; }
+  .hero h1 {
+    font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 800; letter-spacing: -1.5px;
+    line-height: 1.12; margin-bottom: 18px;
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--muted); font-size: 1.15rem; max-width: 620px; margin: 0 auto 36px; }
+  .dl-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 15px 26px; border-radius: 14px; font-size: 1.02rem; font-weight: 650;
+    text-decoration: none; transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+    box-shadow: 0 8px 24px rgba(108, 92, 231, .35); }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--surface2); }
+  .btn small { display: block; font-weight: 400; font-size: .78rem; opacity: .8; }
+  .btn .icon { font-size: 1.5rem; }
+  .hero .note { margin-top: 18px; font-size: .85rem; color: var(--muted); }
+
+  section { padding: 56px 0; }
+  h2 { font-size: 1.9rem; font-weight: 750; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .sub { color: var(--muted); margin-bottom: 32px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--surface2);
+    border-radius: var(--radius); padding: 22px;
+  }
+  .card .emoji { font-size: 1.9rem; display: block; margin-bottom: 10px; }
+  .card h3 { font-size: 1.05rem; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: .92rem; }
+
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; counter-reset: step; }
+  .step { background: var(--surface); border: 1px solid var(--surface2); border-radius: var(--radius); padding: 22px; }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+    border-radius: 50%; font-weight: 700; margin-bottom: 12px;
+  }
+  .step h3 { font-size: 1.02rem; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: .92rem; }
+
+  details {
+    background: var(--surface); border: 1px solid var(--surface2);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 10px;
+  }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin-top: 10px; font-size: .95rem; }
+  details code { background: var(--surface2); padding: 2px 7px; border-radius: 6px; font-size: .85em; }
+
+  footer { padding: 40px 0 56px; text-align: center; color: var(--muted); font-size: .88rem; }
+  footer .badges { margin-bottom: 12px; }
+  .badge {
+    display: inline-block; padding: 5px 12px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--surface2); font-size: .8rem; margin: 0 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <div class="logo">Mac<span>Droid</span></div>
+    <div>
+      <a href="#features">Features</a>
+      <a href="#setup">Setup</a>
+      <a href="#faq">FAQ</a>
+      <a href="#download">Download</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="download">
+    <h1>Your Mac and Android,<br><em>finally best friends.</em></h1>
+    <p>Shared clipboard, file drops, a full trackpad, audio streaming, tab handoff and remote control —
+       over your own Wi-Fi. No cloud, no account, no subscription.</p>
+    <div class="dl-row">
+      <a class="btn btn-primary" href="downloads/MacDroid.app.zip" download>
+        <span class="icon">💻</span>
+        <span>Download for Mac<small>macOS 13+ · Intel &amp; Apple Silicon</small></span>
+      </a>
+      <a class="btn btn-secondary" href="downloads/macdroid.apk" download>
+        <span class="icon">🤖</span>
+        <span>Download for Android<small>Android 10+ · APK</small></span>
+      </a>
+    </div>
+    <p class="note">Free &amp; open · everything stays on your local network</p>
+  </header>
+
+  <section id="features">
+    <h2>Everything, connected</h2>
+    <p class="sub">Twelve features. Zero cloud.</p>
+    <div class="grid">
+      <div class="card"><span class="emoji">📋</span><h3>Clipboard sync</h3>
+        <p>Copy on the Mac, paste on the phone — instantly and automatically. One tap the other way.</p></div>
+      <div class="card"><span class="emoji">📁</span><h3>File &amp; photo transfer</h3>
+        <p>Share from any Android app to your Mac's Downloads. Drag &amp; drop files onto the Mac window to send them back.</p></div>
+      <div class="card"><span class="emoji">🖱️</span><h3>Full trackpad</h3>
+        <p>Your phone becomes a Mac trackpad: taps, right-click, momentum scrolling, pinch zoom, 3-finger Spaces switching, Mission Control.</p></div>
+      <div class="card"><span class="emoji">🔊</span><h3>Mac audio → phone</h3>
+        <p>No Bluetooth on your Mac? Stream its sound to the phone and listen on the phone's Bluetooth earphones.</p></div>
+      <div class="card"><span class="emoji">🎤</span><h3>Phone as microphone</h3>
+        <p>Stream the phone's mic to the Mac live — pair with a virtual audio device to use it in Zoom &amp; co.</p></div>
+      <div class="card"><span class="emoji">🌐</span><h3>Tab handoff</h3>
+        <p>The page open in phone Chrome appears in the Mac's menu bar — click to continue. Works the other way too.</p></div>
+      <div class="card"><span class="emoji">🎛️</span><h3>Mac remote</h3>
+        <p>Volume, mute, play/pause, lock, sleep — and a screenshot button that sends the capture straight to your phone.</p></div>
+      <div class="card"><span class="emoji">🔗</span><h3>Link teleport</h3>
+        <p>Share a link from the phone's browser and it opens on the Mac. Copy a link on the Mac, open it on the phone.</p></div>
+      <div class="card"><span class="emoji">🔄</span><h3>Always connected</h3>
+        <p>Pair once with a 6-digit code. After that the phone finds and reconnects to your Mac automatically, even in the background.</p></div>
+      <div class="card"><span class="emoji">🔔</span><h3>Find my phone</h3>
+        <p>Ping the phone from the Mac (it rings and notifies) or beep the Mac from the phone.</p></div>
+      <div class="card"><span class="emoji">📡</span><h3>Auto discovery</h3>
+        <p>No IP addresses, no setup. Devices find each other on your Wi-Fi via Bonjour/mDNS.</p></div>
+      <div class="card"><span class="emoji">🔒</span><h3>Private by design</h3>
+        <p>Everything travels directly between your two devices on your local network. No servers, no accounts, no analytics.</p></div>
+    </div>
+  </section>
+
+  <section id="setup">
+    <h2>Up and running in two minutes</h2>
+    <p class="sub">One-time setup, then it just works.</p>
+    <div class="steps">
+      <div class="step"><h3>Install on the Mac</h3>
+        <p>Download, unzip, move <strong>MacDroid.app</strong> to Applications and open it.
+           First launch: <strong>right-click → Open</strong> to pass Gatekeeper.</p></div>
+      <div class="step"><h3>Install on the phone</h3>
+        <p>Download the APK and tap it. Allow "install unknown apps" for your browser when Android asks — that's normal for apps outside the Play Store.</p></div>
+      <div class="step"><h3>Pair</h3>
+        <p>Same Wi-Fi, open both apps. Tap your Mac on the phone, check the 6-digit code matches, click Accept on the Mac. Done — forever.</p></div>
+      <div class="step"><h3>Grant as you go</h3>
+        <p>Each feature asks for its permission the first time you use it (touchpad → Accessibility, audio → Screen &amp; System Audio Recording, tab sync → Automation / Accessibility).</p></div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <p class="sub">The honest fine print.</p>
+    <details>
+      <summary>macOS says the app is from an unidentified developer</summary>
+      <p>MacDroid isn't notarized with Apple (that requires a paid developer account). Right-click the app →
+         <strong>Open</strong> → Open. You only need to do this once.</p>
+    </details>
+    <details>
+      <summary>Which versions are supported?</summary>
+      <p>macOS 13 Ventura or newer (Intel and Apple Silicon), Android 10 or newer.</p>
+    </details>
+    <details>
+      <summary>Does it work away from home?</summary>
+      <p>Both devices need to be on the same Wi-Fi network. Internet/relay support is on the roadmap.</p>
+    </details>
+    <details>
+      <summary>Is my data safe?</summary>
+      <p>Nothing leaves your local network and there are no servers involved. Traffic between the devices is not yet
+         encrypted, so use it on networks you trust (your home Wi-Fi) — TLS is on the roadmap.</p>
+    </details>
+    <details>
+      <summary>How do I use the phone as a real microphone in Zoom?</summary>
+      <p>Install the free virtual audio driver <a href="https://existential.audio/blackhole/" style="color:var(--accent2)">BlackHole</a>,
+         select it as the mic output device in MacDroid, then pick "BlackHole" as the microphone in Zoom.</p>
+    </details>
+    <details>
+      <summary>Why does tab sync need an accessibility service?</summary>
+      <p>Android offers no official way for one app to read the browser's current address, so MacDroid uses an
+         accessibility service that reads <em>only</em> the address bar of Chrome / Samsung Internet. Nothing else is read or stored.</p>
+    </details>
+  </section>
+
+  <footer>
+    <div class="badges">
+      <span class="badge">No cloud</span>
+      <span class="badge">No account</span>
+      <span class="badge">No tracking</span>
+      <span class="badge">Open source</span>
+    </div>
+    MacDroid — built for people whose laptop and phone refuse to talk to each other.
+  </footer>
+</div>
+
+</body>
+</html>

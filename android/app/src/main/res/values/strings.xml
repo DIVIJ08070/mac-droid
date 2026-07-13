@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_watcher_description">Lets MacDroid see the web address of the page open in your browser so it can appear in your Mac\'s menu bar (tab sync). Nothing else is read or stored.</string>
+</resources>
