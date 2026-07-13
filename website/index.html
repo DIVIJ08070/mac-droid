@@ -460,6 +460,17 @@
     }, 800);
   });
 
+  // ───── Android visitors: navbar Download button gets the APK directly ─────
+  if (/Android/i.test(navigator.userAgent)) {
+    const navDl = document.querySelector('nav a[href="#mac-install"]');
+    if (navDl) {
+      navDl.setAttribute('href', 'downloads/macdroid.apk');
+      navDl.setAttribute('download', '');
+      const icon = navDl.querySelector('i.bi');
+      if (icon) icon.className = 'bi bi-android2';
+    }
+  }
+
   // ───── Terminal install command ─────
   // curl doesn't set the com.apple.quarantine attribute, so this path skips Gatekeeper entirely.
   const zipUrl = location.protocol === 'file:'
