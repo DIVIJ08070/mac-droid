@@ -455,29 +455,37 @@
     document.getElementById('mLogoPill').classList.toggle('hide', menuOpen);
   }
 
-  // ───── Hero video mouse scrub ─────
+  // ───── Hero video mouse scrub (eased) ─────
   const heroVideo = document.getElementById('heroVideo');
-  let scrubTarget = 0.1, seeking = false, scrubReady = false;
+  let scrubTarget = 0.1;   // where the mouse wants the video
+  let scrubEased = 0.1;    // where it actually is (glides toward target)
+  let seeking = false, scrubReady = false;
+
   heroVideo.addEventListener('loadedmetadata', () => {
     scrubReady = true;
     heroVideo.pause();
     heroVideo.currentTime = 0.1; // force a decoded frame so the hero never paints black
   });
-  heroVideo.addEventListener('seeked', () => {
-    seeking = false;
-    if (scrubReady && Math.abs(heroVideo.currentTime - scrubTarget) > 0.01) requestSeek();
-  });
-  function requestSeek() {
-    if (seeking || !scrubReady) return;
-    seeking = true;
-    heroVideo.currentTime = scrubTarget;
-  }
+  heroVideo.addEventListener('seeked', () => { seeking = false; });
+
   window.addEventListener('mousemove', e => {
     if (!scrubReady || !heroVideo.duration) return;
     const delta = (e.movementX / window.innerWidth) * heroVideo.duration * 0.8;
     scrubTarget = Math.min(Math.max(scrubTarget + delta, 0), heroVideo.duration - 0.05);
-    requestSeek();
   });
+
+  // Single rAF loop: ease toward the target and issue at most one seek at a time.
+  function scrubLoop() {
+    if (scrubReady && heroVideo.duration) {
+      scrubEased += (scrubTarget - scrubEased) * 0.25; // glide
+      if (!seeking && Math.abs(heroVideo.currentTime - scrubEased) > 0.012) {
+        seeking = true;
+        heroVideo.currentTime = scrubEased;
+      }
+    }
+    requestAnimationFrame(scrubLoop);
+  }
+  requestAnimationFrame(scrubLoop);
 
   // ───── whileInView fade-ups ─────
   const io = new IntersectionObserver(entries => {
