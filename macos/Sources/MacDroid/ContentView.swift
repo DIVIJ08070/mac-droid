@@ -91,6 +91,11 @@ struct ContentView: View {
                     } else {
                         Button("View phone screen") { server.requestPhoneScreen() }
                     }
+                    if server.mirroringToPhone {
+                        Button("Stop mirroring to phone") { server.stopMirrorToPhone() }
+                    } else {
+                        Button("Mirror this Mac to phone") { server.startMirrorToPhone() }
+                    }
                 }
                 Toggle("Stream Mac audio to phone (plays on the phone's Bluetooth/speaker)", isOn: Binding(
                     get: { server.speakerStreaming },

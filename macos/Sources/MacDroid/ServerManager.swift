@@ -20,9 +20,12 @@ final class ServerManager: ObservableObject {
 
     @Published var screenViewing = false
 
+    @Published var mirroringToPhone = false
+
     let micReceiver = MicReceiver()
     private let inputController = InputController()
     private let screenViewer = ScreenViewer()
+    private var macScreenSender: MacScreenSender?
     private let statusBar = StatusBarController()
     private var tabTimer: Timer?
     private var lastSentTabURL: String?
@@ -49,6 +52,13 @@ final class ServerManager: ObservableObject {
                 body["x2"] = x2; body["y2"] = y2; body["ms"] = ms
             }
             self.send(Packet(type: "screen.input", body: body))
+        }
+        screenViewer.onKey = { [weak self] text, special in
+            guard let self, self.isPaired else { return }
+            var body: [String: Any] = [:]
+            if let text { body["text"] = text }
+            if let special { body["special"] = special }
+            self.send(Packet(type: "screen.key", body: body))
         }
 
         // Handoff-style tab sync: poll the front browser tab and push changes to the phone.
@@ -232,6 +242,13 @@ final class ServerManager: ObservableObject {
             screenViewer.stop()
             screenViewing = false
 
+        case "macscreen.request":
+            guard isPaired else { return }
+            startMirrorToPhone()
+
+        case "macscreen.stop":
+            stopMirrorToPhone(notifyPhone: false)
+
         case "file.offer":
             guard isPaired,
                   let name = packet.body["name"] as? String,
@@ -310,6 +327,30 @@ final class ServerManager: ObservableObject {
         guard isPaired else { return }
         send(Packet(type: "screen.request"))
         appendLog("Asked phone to share its screen — accept on the phone")
+    }
+
+    func startMirrorToPhone() {
+        guard isPaired, macScreenSender == nil else { return }
+        let sender = MacScreenSender()
+        macScreenSender = sender
+        sender.onLog = { [weak self] message in self?.appendLog(message) }
+        sender.onStopped = { [weak self] in
+            self?.macScreenSender = nil
+            self?.mirroringToPhone = false
+        }
+        sender.start { [weak self] width, height, port in
+            guard let self else { return }
+            self.send(Packet(type: "macscreen.start", body: ["width": width, "height": height, "port": port]))
+            self.mirroringToPhone = true
+            self.appendLog("Mirroring Mac screen to phone (\(width)×\(height))")
+        }
+    }
+
+    func stopMirrorToPhone(notifyPhone: Bool = true) {
+        if notifyPhone { send(Packet(type: "macscreen.stop")) }
+        macScreenSender?.stop()
+        macScreenSender = nil
+        mirroringToPhone = false
     }
 
     func stopPhoneScreen() {
@@ -672,6 +713,9 @@ final class ServerManager: ObservableObject {
         speakerStreaming = false
         screenViewer.stop()
         screenViewing = false
+        macScreenSender?.stop()
+        macScreenSender = nil
+        mirroringToPhone = false
         statusBar.hide()
         phoneTabURL = nil
         phoneTabTitle = ""

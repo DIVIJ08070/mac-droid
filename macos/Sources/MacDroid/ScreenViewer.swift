@@ -12,6 +12,7 @@ final class ScreenViewer: NSObject {
     var onClosed: (() -> Void)?
     /// Emits a normalized (0–1) input gesture. tap: only (x,y). swipe: all four + ms.
     var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
+    var onKey: ((_ text: String?, _ special: String?) -> Void)?
 
     private var window: NSWindow?
     private var inputView: ScreenInputView?
@@ -93,12 +94,16 @@ final class ScreenViewer: NSObject {
         hostView.onInput = { [weak self] action, x, y, x2, y2, ms in
             self?.onInput?(action, x, y, x2, y2, ms)
         }
+        hostView.onKey = { [weak self] text, special in
+            self?.onKey?(text, special)
+        }
         win.contentView?.addSubview(hostView)
 
         displayLayer = layer
         inputView = hostView
         window = win
         win.makeKeyAndOrderFront(nil)
+        win.makeFirstResponder(hostView)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -252,11 +257,14 @@ extension ScreenViewer: NSWindowDelegate {
 final class ScreenInputView: NSView {
     var videoSize = CGSize(width: 1, height: 1)
     var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
+    /// Keyboard passthrough: (text, special). Exactly one is non-nil.
+    var onKey: ((_ text: String?, _ special: String?) -> Void)?
 
     private var downPoint: CGPoint?
     private var downTime: TimeInterval = 0
 
     override var isFlipped: Bool { true } // top-left origin, matching the phone
+    override var acceptsFirstResponder: Bool { true }
 
     /// Maps a view-space point to the video's normalized coordinates, clamped to 0–1.
     private func normalized(_ p: CGPoint) -> CGPoint? {
@@ -296,5 +304,19 @@ final class ScreenInputView: NSView {
         let dy = Double(event.scrollingDeltaY)
         let delta = max(-0.35, min(0.35, dy / 400))
         onInput?("swipe", n.x, n.y, n.x, n.y + delta, 120)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 51, 117: onKey?(nil, "backspace")           // delete / forward-delete
+        case 36, 76:  onKey?(nil, "enter")               // return / keypad enter
+        case 49:      onKey?(nil, "space")
+        case 53:      onKey?(nil, "back")                // esc → Android Back
+        default:
+            if let chars = event.characters, !chars.isEmpty,
+               chars.unicodeScalars.allSatisfy({ $0.value >= 32 }) {
+                onKey?(chars, nil)
+            }
+        }
     }
 }

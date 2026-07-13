@@ -39,6 +39,10 @@ One JSON object per line, terminated by `\n`:
 | `screen.start` | Android → Mac | `{"width": 540, "height": 1170, "port": 54321}` | screen stream ready: raw H.264 Annex-B on the side channel; Mac opens a viewer window |
 | `screen.stop` | both | `{}` | end the screen stream |
 | `screen.input` | Mac → Android | `{"a": "tap"\|"swipe", "x": 0.5, "y": 0.5, "x2": 0.5, "y2": 0.2, "ms": 200}` | control the phone from the screen-mirror window. Coordinates are normalized 0–1 of the screen; Android injects the gesture via an Accessibility service |
+| `screen.key` | Mac → Android | `{"text": "a"}` or `{"special": "backspace"\|"enter"\|"space"\|"back"\|"home"}` | keyboard passthrough while mirroring: type into the phone's focused field, or press a navigation key |
+| `macscreen.request` | Android → Mac | `{}` | ask the Mac to mirror its screen to the phone |
+| `macscreen.start` | Mac → Android | `{"width": 1280, "height": 800, "port": 54321}` | Mac screen stream ready: raw H.264 Annex-B on the side channel; phone opens a viewer |
+| `macscreen.stop` | both | `{}` | end the Mac→phone screen stream |
 
 ## Audio streaming
 Same side-channel pattern as files, but continuous:

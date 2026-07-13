@@ -486,6 +486,12 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            OutlinedButton(
+                onClick = { ConnectionManager.requestMacScreen() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("🖥 View Mac screen here")
+            }
             val controlEnabled by produceState(initialValue = RemoteControlService.isEnabled(context)) {
                 while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
             }

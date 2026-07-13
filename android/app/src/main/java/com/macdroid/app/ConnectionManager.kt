@@ -82,6 +82,9 @@ object ConnectionManager {
     private var micStreamer: MicStreamer? = null
     private var speakerPlayer: SpeakerPlayer? = null
     private var screenStreamer: ScreenStreamer? = null
+    private var macScreenReceiver: MacScreenReceiver? = null
+    private var pendingMacScreen: Triple<String, Int, Pair<Int, Int>>? = null
+    private var macScreenSurface: android.view.Surface? = null
 
     private val _screenSharing = MutableStateFlow(false)
     val screenSharing: StateFlow<Boolean> = _screenSharing
@@ -393,6 +396,46 @@ object ConnectionManager {
         _speakerPlaying.value = false
     }
 
+    // MARK: view Mac screen on the phone
+
+    /** Ask the Mac to start mirroring its screen here. */
+    fun requestMacScreen() {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("macscreen.request"))
+            appendLog("Asked Mac to share its screen")
+        }
+    }
+
+    /** Called by MacScreenActivity once its Surface is ready. */
+    fun attachMacScreenSurface(surface: android.view.Surface) {
+        macScreenSurface = surface
+        val pending = pendingMacScreen ?: return
+        val (host, port, size) = pending
+        val receiver = MacScreenReceiver(
+            scope = scope,
+            host = host, port = port, width = size.first, height = size.second,
+            surface = surface,
+            onLog = ::appendLog,
+            onStopped = { },
+        )
+        macScreenReceiver = receiver
+        receiver.start()
+    }
+
+    fun detachMacScreenSurface() {
+        macScreenSurface = null
+        macScreenReceiver?.stop()
+        macScreenReceiver = null
+    }
+
+    fun stopMacScreen(notifyMac: Boolean = true) {
+        macScreenReceiver?.stop()
+        macScreenReceiver = null
+        pendingMacScreen = null
+        if (notifyMac) scope.launch { send(Packet("macscreen.stop")) }
+    }
+
     // MARK: screen sharing (phone → Mac)
 
     /**
@@ -688,6 +731,23 @@ object ConnectionManager {
                 stopScreenShare(notifyMac = false)
             }
 
+            "macscreen.start" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val host = currentMac?.host ?: return
+                val port = packet.body.optInt("port", -1)
+                val w = packet.body.optInt("width", 0)
+                val h = packet.body.optInt("height", 0)
+                if (port <= 0 || w <= 0 || h <= 0) return
+                pendingMacScreen = Triple(host, port, w to h)
+                val intent = Intent(appContext, MacScreenActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
+            }
+
+            "macscreen.stop" -> {
+                stopMacScreen(notifyMac = false)
+            }
+
             "screen.input" -> {
                 if (_state.value != ConnectionState.PAIRED) return
                 val service = RemoteControlService.instance ?: return
@@ -705,6 +765,15 @@ object ConnectionManager {
                         service.swipe(x, y, x2, y2, ms)
                     }
                 }
+            }
+
+            "screen.key" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val service = RemoteControlService.instance ?: return
+                val text = packet.body.optString("text")
+                val special = packet.body.optString("special")
+                if (text.isNotEmpty()) service.typeText(text)
+                else if (special.isNotEmpty()) service.pressSpecial(special)
             }
         }
     }

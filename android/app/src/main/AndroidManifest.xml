@@ -41,6 +41,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".MacScreenActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
         <service
             android:name=".ConnectionService"
             android:exported="false"
