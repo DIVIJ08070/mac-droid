@@ -42,6 +42,14 @@ final class ServerManager: ObservableObject {
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
         screenViewer.onLog = { [weak self] message in self?.appendLog(message) }
         screenViewer.onClosed = { [weak self] in self?.screenViewing = false }
+        screenViewer.onInput = { [weak self] action, x, y, x2, y2, ms in
+            guard let self, self.isPaired else { return }
+            var body: [String: Any] = ["a": action, "x": x, "y": y]
+            if action == "swipe" {
+                body["x2"] = x2; body["y2"] = y2; body["ms"] = ms
+            }
+            self.send(Packet(type: "screen.input", body: body))
+        }
 
         // Handoff-style tab sync: poll the front browser tab and push changes to the phone.
         tabTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in

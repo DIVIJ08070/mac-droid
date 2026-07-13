@@ -76,7 +76,26 @@ class ConnectionService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START_SCREEN) {
+            // Promote the FGS to include mediaProjection type FIRST, synchronously, so the
+            // subsequent getMediaProjection() call is legal on Android 14+.
+            try {
+                startForegroundWithTypes(
+                    includeMic = ConnectionManager.micStreaming.value,
+                    includeScreen = true,
+                    text = "Sharing screen with Mac"
+                )
+                @Suppress("DEPRECATION")
+                val data = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+                val code = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                if (data != null) ConnectionManager.beginScreenShare(code, data)
+            } catch (e: Exception) {
+                android.util.Log.w("MacDroid", "Screen share start failed: ${e.message}")
+            }
+        }
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -133,5 +152,8 @@ class ConnectionService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 2
+        const val ACTION_START_SCREEN = "com.macdroid.app.START_SCREEN"
+        const val EXTRA_RESULT_CODE = "result_code"
+        const val EXTRA_RESULT_DATA = "result_data"
     }
 }

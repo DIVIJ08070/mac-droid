@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="browser_watcher_description">Lets MacDroid see the web address of the page open in your browser so it can appear in your Mac\'s menu bar (tab sync). Nothing else is read or stored.</string>
+    <string name="remote_control_description">Lets MacDroid tap and swipe your phone when you control it from the Mac\'s screen-mirror window. Only active while you are mirroring.</string>
 </resources>

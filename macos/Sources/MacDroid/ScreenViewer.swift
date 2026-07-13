@@ -10,8 +10,11 @@ import VideoToolbox
 final class ScreenViewer: NSObject {
     var onLog: ((String) -> Void)?
     var onClosed: (() -> Void)?
+    /// Emits a normalized (0–1) input gesture. tap: only (x,y). swipe: all four + ms.
+    var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
 
     private var window: NSWindow?
+    private var inputView: ScreenInputView?
     private var displayLayer: AVSampleBufferDisplayLayer?
     private var connection: NWConnection?
     private var formatDescription: CMFormatDescription?
@@ -58,6 +61,7 @@ final class ScreenViewer: NSObject {
             window.close()
         }
         window = nil
+        inputView = nil
         displayLayer = nil
         onClosed?()
     }
@@ -81,13 +85,18 @@ final class ScreenViewer: NSObject {
         let layer = AVSampleBufferDisplayLayer()
         layer.videoGravity = .resizeAspect
         layer.backgroundColor = NSColor.black.cgColor
-        let hostView = NSView(frame: win.contentView!.bounds)
+        let hostView = ScreenInputView(frame: win.contentView!.bounds)
         hostView.wantsLayer = true
         hostView.layer = layer
         hostView.autoresizingMask = [.width, .height]
+        hostView.videoSize = CGSize(width: width, height: height)
+        hostView.onInput = { [weak self] action, x, y, x2, y2, ms in
+            self?.onInput?(action, x, y, x2, y2, ms)
+        }
         win.contentView?.addSubview(hostView)
 
         displayLayer = layer
+        inputView = hostView
         window = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -235,5 +244,57 @@ extension ScreenViewer: NSWindowDelegate {
             self.onLog?("Screen window closed")
             self.stop()
         }
+    }
+}
+
+/// Hosts the video layer and converts mouse clicks/drags into normalized (0–1)
+/// phone coordinates, accounting for the letterboxing of aspect-fit video.
+final class ScreenInputView: NSView {
+    var videoSize = CGSize(width: 1, height: 1)
+    var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
+
+    private var downPoint: CGPoint?
+    private var downTime: TimeInterval = 0
+
+    override var isFlipped: Bool { true } // top-left origin, matching the phone
+
+    /// Maps a view-space point to the video's normalized coordinates, clamped to 0–1.
+    private func normalized(_ p: CGPoint) -> CGPoint? {
+        let viewW = bounds.width, viewH = bounds.height
+        guard viewW > 0, viewH > 0, videoSize.width > 0, videoSize.height > 0 else { return nil }
+        let scale = min(viewW / videoSize.width, viewH / videoSize.height)
+        let dispW = videoSize.width * scale, dispH = videoSize.height * scale
+        let originX = (viewW - dispW) / 2, originY = (viewH - dispH) / 2
+        let nx = (p.x - originX) / dispW
+        let ny = (p.y - originY) / dispH
+        guard nx >= 0, nx <= 1, ny >= 0, ny <= 1 else { return nil }
+        return CGPoint(x: nx, y: ny)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        downPoint = convert(event.locationInWindow, from: nil)
+        downTime = event.timestamp
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let down = downPoint, let start = normalized(down) else { downPoint = nil; return }
+        let up = convert(event.locationInWindow, from: nil)
+        let dragDistance = hypot(up.x - down.x, up.y - down.y)
+        if dragDistance < 8 {
+            onInput?("tap", start.x, start.y, 0, 0, 0)
+        } else if let end = normalized(up) {
+            let ms = Int(max(60, min(1500, (event.timestamp - downTime) * 1000)))
+            onInput?("swipe", start.x, start.y, end.x, end.y, ms)
+        }
+        downPoint = nil
+    }
+
+    // Scroll wheel → vertical swipe (natural direction).
+    override func scrollWheel(with event: NSEvent) {
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        guard let n = normalized(center) else { return }
+        let dy = Double(event.scrollingDeltaY)
+        let delta = max(-0.35, min(0.35, dy / 400))
+        onInput?("swipe", n.x, n.y, n.x, n.y + delta, 120)
     }
 }

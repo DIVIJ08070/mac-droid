@@ -354,9 +354,15 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
     ) { result ->
         val data = result.data
         if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
-            val mpm = context.getSystemService(android.media.projection.MediaProjectionManager::class.java)
-            val projection = mpm?.getMediaProjection(result.resultCode, data)
-            if (projection != null) ConnectionManager.startScreenShare(projection)
+            // Hand the consent result to the service. It must call startForeground with the
+            // mediaProjection type BEFORE getMediaProjection() runs (Android 14+ requirement),
+            // so the projection is created inside the service, not here.
+            val svc = Intent(context, ConnectionService::class.java).apply {
+                action = ConnectionService.ACTION_START_SCREEN
+                putExtra(ConnectionService.EXTRA_RESULT_CODE, result.resultCode)
+                putExtra(ConnectionService.EXTRA_RESULT_DATA, data)
+            }
+            ContextCompat.startForegroundService(context, svc)
         }
     }
 
@@ -479,6 +485,23 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            val controlEnabled by produceState(initialValue = RemoteControlService.isEnabled(context)) {
+                while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
+            }
+            if (controlEnabled) {
+                Text(
+                    "✓ Mouse control enabled — click the Mac window to tap, drag to swipe.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                OutlinedButton(onClick = {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }) { Text("Enable mouse control") }
             }
         }
 

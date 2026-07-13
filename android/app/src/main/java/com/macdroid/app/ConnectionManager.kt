@@ -396,37 +396,39 @@ object ConnectionManager {
     // MARK: screen sharing (phone → Mac)
 
     /**
-     * Called with the result of the MediaProjection consent dialog. Sets the
-     * sharing flag first so ConnectionService escalates to a mediaProjection
-     * foreground service (required on Android 14+), then starts capturing.
+     * Creates the MediaProjection and starts capture. MUST be called from the
+     * ConnectionService AFTER it has entered a mediaProjection-type foreground
+     * service, or getMediaProjection() throws a SecurityException on Android 14+.
      */
-    fun startScreenShare(projection: android.media.projection.MediaProjection) {
-        if (_state.value != ConnectionState.PAIRED || _screenSharing.value) {
-            projection.stop()
-            return
-        }
+    fun beginScreenShare(resultCode: Int, data: Intent) {
+        if (_state.value != ConnectionState.PAIRED || _screenSharing.value) return
+        val mpm = appContext.getSystemService(android.media.projection.MediaProjectionManager::class.java)
+        val projection = try {
+            mpm?.getMediaProjection(resultCode, data)
+        } catch (e: Exception) {
+            appendLog("Screen capture denied by system: ${e.message}")
+            null
+        } ?: return
+
         _screenSharing.value = true
-        scope.launch {
-            kotlinx.coroutines.delay(400) // let the service switch FGS types first
-            val streamer = ScreenStreamer(
-                context = appContext,
-                scope = scope,
-                onOffer = { width, height, port ->
-                    send(Packet("screen.start", JSONObject().apply {
-                        put("width", width)
-                        put("height", height)
-                        put("port", port)
-                    }))
-                },
-                onLog = ::appendLog,
-                onStopped = {
-                    _screenSharing.value = false
-                    scope.launch { send(Packet("screen.stop")) }
-                },
-            )
-            screenStreamer = streamer
-            streamer.start(projection)
-        }
+        val streamer = ScreenStreamer(
+            context = appContext,
+            scope = scope,
+            onOffer = { width, height, port ->
+                send(Packet("screen.start", JSONObject().apply {
+                    put("width", width)
+                    put("height", height)
+                    put("port", port)
+                }))
+            },
+            onLog = ::appendLog,
+            onStopped = {
+                _screenSharing.value = false
+                scope.launch { send(Packet("screen.stop")) }
+            },
+        )
+        screenStreamer = streamer
+        streamer.start(projection)
     }
 
     fun stopScreenShare(notifyMac: Boolean = true) {
@@ -684,6 +686,25 @@ object ConnectionManager {
 
             "screen.stop" -> {
                 stopScreenShare(notifyMac = false)
+            }
+
+            "screen.input" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val service = RemoteControlService.instance ?: return
+                val metrics = appContext.resources.displayMetrics
+                val w = metrics.widthPixels
+                val h = metrics.heightPixels
+                val x = (packet.body.optDouble("x", 0.5) * w).toFloat()
+                val y = (packet.body.optDouble("y", 0.5) * h).toFloat()
+                when (packet.body.optString("a")) {
+                    "tap" -> service.tap(x, y)
+                    "swipe" -> {
+                        val x2 = (packet.body.optDouble("x2", 0.5) * w).toFloat()
+                        val y2 = (packet.body.optDouble("y2", 0.5) * h).toFloat()
+                        val ms = packet.body.optLong("ms", 200)
+                        service.swipe(x, y, x2, y2, ms)
+                    }
+                }
             }
         }
     }
