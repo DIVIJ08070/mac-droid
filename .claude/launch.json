@@ -23,6 +23,20 @@
         "/Users/mac/Desktop/demo"
       ],
       "port": 3050
+    },
+    {
+      "name": "whatsapp-demo-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/mac/Desktop/demo",
+        "--",
+        "-p",
+        "3051"
+      ],
+      "port": 3051
     }
   ]
 }

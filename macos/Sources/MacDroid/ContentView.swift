@@ -332,6 +332,7 @@ struct ContentView: View {
     }
 
     @State private var fsDropTargeted = false
+    @State private var selectedFiles: Set<String> = []
 
     private var fileBrowser: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -346,7 +347,14 @@ struct ContentView: View {
                     .lineLimit(1)
                     .truncationMode(.head)
                 Spacer()
-                Button("Close") { server.closeFileBrowser() }
+                if !selectedFiles.isEmpty {
+                    Button("Download \(selectedFiles.count)") {
+                        for name in selectedFiles { server.fsDownload(name: name) }
+                        selectedFiles.removeAll()
+                    }
+                    .font(.caption)
+                }
+                Button("Close") { server.closeFileBrowser(); selectedFiles.removeAll() }
                     .buttonStyle(.plain).font(.caption).foregroundStyle(Theme.faint)
             }
             if server.fsNeedsPermission {
@@ -357,8 +365,8 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     ForEach(server.fsEntries) { entry in
                         HStack(spacing: 8) {
-                            Image(systemName: entry.isDir ? "folder.fill" : "doc")
-                                .foregroundStyle(entry.isDir ? Color.accentColor : Theme.faint)
+                            Image(systemName: entry.isDir ? "folder.fill" : (selectedFiles.contains(entry.name) ? "checkmark.circle.fill" : "doc"))
+                                .foregroundStyle(entry.isDir ? Color.accentColor : (selectedFiles.contains(entry.name) ? Color.accentColor : Theme.faint))
                                 .frame(width: 16)
                             Text(entry.name).lineLimit(1)
                             Spacer()
@@ -368,12 +376,19 @@ struct ContentView: View {
                             }
                         }
                         .padding(.vertical, 3).padding(.horizontal, 4)
+                        .background(selectedFiles.contains(entry.name) ? Color.accentColor.opacity(0.12) : Color.clear)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            if entry.isDir { server.fsNavigate(to: server.fsPath + "/" + entry.name) }
-                            else { server.fsDownload(name: entry.name) }
+                            if entry.isDir {
+                                server.fsNavigate(to: server.fsPath + "/" + entry.name)
+                                selectedFiles.removeAll()
+                            } else if selectedFiles.contains(entry.name) {
+                                selectedFiles.remove(entry.name)
+                            } else {
+                                selectedFiles.insert(entry.name)
+                            }
                         }
-                        .help(entry.isDir ? "Open folder" : "Click to download to your Mac")
+                        .help(entry.isDir ? "Open folder" : "Click to select · then Download")
                     }
                 }
             }
@@ -399,20 +414,31 @@ struct ContentView: View {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
+    @State private var selectedPhotos: Set<Int> = []
+
     private var galleryGrid: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(server.galleryThumbs.isEmpty && server.galleryLoading
                      ? "Loading gallery…"
-                     : "\(server.galleryThumbs.count) photos · click one to save to your Mac")
+                     : selectedPhotos.isEmpty
+                        ? "\(server.galleryThumbs.count) photos · click to select"
+                        : "\(selectedPhotos.count) selected")
                     .font(.caption)
                     .foregroundStyle(Theme.faint)
                 Spacer()
+                if !selectedPhotos.isEmpty {
+                    Button("Download \(selectedPhotos.count)") {
+                        server.pullGalleryImages(ids: Array(selectedPhotos))
+                        selectedPhotos.removeAll()
+                    }
+                    .font(.caption)
+                }
                 if !server.galleryThumbs.isEmpty {
-                    Button("Close") { server.galleryThumbs = []; server.galleryHasMore = false }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(Theme.faint)
+                    Button("Close") {
+                        server.galleryThumbs = []; server.galleryHasMore = false; selectedPhotos.removeAll()
+                    }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(Theme.faint)
                 }
             }
             ScrollView {
@@ -423,25 +449,31 @@ struct ContentView: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 84, height: 84)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay {
+                                if selectedPhotos.contains(thumb.id) {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.white, Color.accentColor)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                        .padding(4)
+                                }
+                            }
                             .contentShape(Rectangle())
-                            .onTapGesture { server.pullGalleryImage(id: thumb.id) }
-                            .help("Save \(thumb.name) to your Mac")
+                            .onTapGesture {
+                                if selectedPhotos.contains(thumb.id) { selectedPhotos.remove(thumb.id) }
+                                else { selectedPhotos.insert(thumb.id) }
+                            }
+                            .help("Click to select · then Download")
+                            .onAppear {
+                                // Infinite scroll: load the next page as the last row appears.
+                                if thumb.id == server.galleryThumbs.last?.id { server.loadMoreGallery() }
+                            }
                     }
                 }
                 .padding(.vertical, 2)
-
-                if server.galleryHasMore || (server.galleryLoading && !server.galleryThumbs.isEmpty) {
-                    Button {
-                        server.loadMoreGallery()
-                    } label: {
-                        if server.galleryLoading {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Load more")
-                        }
-                    }
-                    .disabled(server.galleryLoading)
-                    .padding(.vertical, 6)
+                if server.galleryLoading && !server.galleryThumbs.isEmpty {
+                    ProgressView().controlSize(.small).padding(.vertical, 6)
                 }
             }
             .frame(height: 220)

@@ -26,6 +26,7 @@ One JSON object per line, terminated by `\n`:
 | `pair.accept` | Mac → Android | `{"token": "..."}` | accepted; token is stored by the phone for silent reconnects |
 | `pair.reject` | Mac → Android | `{}` | user rejected, or token was invalid |
 | `clipboard` | both | `{"content": "..."}` | set the receiver's clipboard to `content` |
+| `clipboard.image` | Android → Mac | `{"name": "...", "size": 123, "port": 54321}` | a copied image; Mac pulls the bytes on the side channel and puts it on NSPasteboard so ⌘V pastes it into any app |
 | `ping` | both | `{"message": "..."}` | make the receiver ring/notify (find-my-phone) |
 | `file.offer` | both | `{"name": "...", "size": 123, "port": 54321}` | a file is ready; receiver pulls it from the side channel |
 | `heartbeat` | Android → Mac | `{}` | keep-alive, sent every 15 s; receiver ignores it. A failed write tells the phone the link is dead |

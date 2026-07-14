@@ -328,7 +328,21 @@ object ConnectionManager {
     fun sendClipboard() {
         val clipboardManager =
             appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = clipboardManager.primaryClip?.getItemAt(0)?.coerceToText(appContext)?.toString()
+        val clip = clipboardManager.primaryClip
+        val item = clip?.getItemAt(0)
+
+        // If the clipboard holds an image (or any file URI), send the bytes so it
+        // lands on the Mac's clipboard as an image — ⌘V into any Mac app.
+        val uri = item?.uri
+        val desc = clipboardManager.primaryClipDescription
+        val isImage = uri != null && desc != null &&
+            (0 until desc.mimeTypeCount).any { desc.getMimeType(it).startsWith("image/") }
+        if (isImage) {
+            sendClipboardImage(uri!!)
+            return
+        }
+
+        val text = item?.coerceToText(appContext)?.toString()
         if (text.isNullOrEmpty()) {
             appendLog("Clipboard is empty — nothing to send")
             return
@@ -336,6 +350,54 @@ object ConnectionManager {
         scope.launch {
             send(Packet("clipboard", JSONObject().put("content", text)))
             appendLog("Clipboard → Mac (${text.length} chars)")
+        }
+    }
+
+    /** Send a copied image to the Mac's clipboard (paste with ⌘V). */
+    private fun sendClipboardImage(uri: Uri) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val resolver = appContext.contentResolver
+                var name = "image"
+                var size = -1L
+                resolver.query(uri, null, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val si = c.getColumnIndex(OpenableColumns.SIZE)
+                        if (ni >= 0) name = c.getString(ni) ?: name
+                        if (si >= 0) size = c.getLong(si)
+                    }
+                }
+                if (size < 0) { // not all providers report size — read into memory
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                    size = bytes.size.toLong()
+                    java.net.ServerSocket(0).use { server ->
+                        server.soTimeout = 15000
+                        send(Packet("clipboard.image", JSONObject().apply {
+                            put("name", name); put("size", size); put("port", server.localPort)
+                        }))
+                        server.accept().use { it.getOutputStream().apply { write(bytes); flush() } }
+                    }
+                    appendLog("Image → Mac clipboard")
+                    return@launch
+                }
+                java.net.ServerSocket(0).use { server ->
+                    server.soTimeout = 15000
+                    send(Packet("clipboard.image", JSONObject().apply {
+                        put("name", name); put("size", size); put("port", server.localPort)
+                    }))
+                    server.accept().use { client ->
+                        resolver.openInputStream(uri)?.use { input ->
+                            val out = client.getOutputStream(); val buf = ByteArray(65536)
+                            while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n) }
+                            out.flush()
+                        }
+                    }
+                }
+                appendLog("Image → Mac clipboard")
+            } catch (e: Exception) {
+                appendLog("Clipboard image failed: ${e.message}")
+            }
         }
     }
 

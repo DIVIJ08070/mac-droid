@@ -356,6 +356,15 @@ final class ServerManager: ObservableObject {
             let isPull = (packet.body["pull"] as? Bool) ?? false
             receiveFile(name: name, size: size, host: host, port: UInt16(port), pull: isPull)
 
+        case "clipboard.image":
+            guard isPaired,
+                  let name = packet.body["name"] as? String,
+                  let size = packet.body["size"] as? Int,
+                  let port = packet.body["port"] as? Int,
+                  let host = remoteHost()
+            else { return }
+            receiveFile(name: name, size: size, host: host, port: UInt16(port), clipboardImage: true)
+
         default:
             appendLog("Unknown packet: \(packet.type)")
         }
@@ -724,11 +733,11 @@ final class ServerManager: ObservableObject {
         return host
     }
 
-    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16, pull: Bool = false) {
+    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16, pull: Bool = false, clipboardImage: Bool = false) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
-        // Pulled files (drag-out) go to a temp dir and are handed to the drag; normal
+        // Pulled files (drag-out) and clipboard images go to a temp dir; normal
         // transfers land in Downloads.
-        let directory = pull
+        let directory = (pull || clipboardImage)
             ? FileManager.default.temporaryDirectory
             : FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let destination = Self.uniqueDestination(in: directory, name: Self.sanitize(name))
@@ -740,7 +749,7 @@ final class ServerManager: ObservableObject {
             return
         }
 
-        if !pull {
+        if !pull && !clipboardImage {
             transferStatus = "Receiving \(name)…"
             appendLog("Receiving \(name) (\(Self.formatBytes(size)))")
         }
@@ -756,6 +765,16 @@ final class ServerManager: ObservableObject {
                 if pull {
                     appendLog("Pulled \(name) from phone")
                     completePull(destination)
+                } else if clipboardImage {
+                    if let image = NSImage(contentsOf: destination) {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.writeObjects([image])
+                        appendLog("Image copied — paste anywhere with ⌘V")
+                    } else {
+                        appendLog("Received image but couldn't read it")
+                    }
+                    try? FileManager.default.removeItem(at: destination)
                 } else {
                     appendLog("Received \(name) → Downloads ✓")
                     if self.expectingPickedPhotos {
@@ -870,10 +889,15 @@ final class ServerManager: ObservableObject {
 
     /// Tap a thumbnail → pull the full-resolution image to Downloads + reveal.
     func pullGalleryImage(id: Int) {
-        guard isPaired else { return }
+        pullGalleryImages(ids: [id])
+    }
+
+    func pullGalleryImages(ids: [Int]) {
+        guard isPaired, !ids.isEmpty else { return }
         expectingPickedPhotos = true
-        send(Packet(type: "gallery.pull", body: ["id": id]))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+        for id in ids { send(Packet(type: "gallery.pull", body: ["id": id])) }
+        appendLog("Downloading \(ids.count) photo(s)…")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in
             self?.expectingPickedPhotos = false
         }
     }
