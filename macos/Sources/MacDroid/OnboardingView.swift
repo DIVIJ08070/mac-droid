@@ -55,7 +55,7 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 // Top bar: wordmark + skip.
                 HStack {
-                    Text("MACDROID")
+                    Text("BIFROST")
                         .font(Theme.mono(11, .medium))
                         .tracking(4)
                         .foregroundStyle(Theme.faint)

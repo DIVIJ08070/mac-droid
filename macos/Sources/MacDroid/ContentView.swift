@@ -111,7 +111,7 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack {
-            Text("MACDROID")
+            Text("BIFROST")
                 .font(Theme.mono(11, .medium))
                 .tracking(4)
                 .foregroundStyle(Theme.faint)
