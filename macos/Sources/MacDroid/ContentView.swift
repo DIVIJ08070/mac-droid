@@ -316,15 +316,87 @@ struct ContentView: View {
                 } else {
                     Button("Mirror Mac to phone") { server.startMirrorToPhone() }
                 }
+                Button("Browse phone files") { server.browsePhoneFiles() }
                 Button("Browse phone gallery") { server.browsePhoneGallery() }
                 Button("Pull photos from phone…") { server.pullPhotosFromPhone() }
                 Button("Ping phone") { server.pingPhone() }
+            }
+            if server.fileBrowsing {
+                fileBrowser
             }
             if server.galleryLoading || !server.galleryThumbs.isEmpty {
                 galleryGrid
             }
         }
         .card()
+    }
+
+    @State private var fsDropTargeted = false
+
+    private var fileBrowser: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    if !server.fsParent.isEmpty { server.fsNavigate(to: server.fsParent) }
+                } label: { Image(systemName: "chevron.up") }
+                .disabled(server.fsParent.isEmpty)
+                Text(server.fsPath.isEmpty ? "Phone storage" : server.fsPath)
+                    .font(.caption)
+                    .foregroundStyle(Theme.faint)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                Spacer()
+                Button("Close") { server.closeFileBrowser() }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(Theme.faint)
+            }
+            if server.fsNeedsPermission {
+                Text("Grant \"All files access\" on the phone (it just opened Settings), then click Browse again.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(server.fsEntries) { entry in
+                        HStack(spacing: 8) {
+                            Image(systemName: entry.isDir ? "folder.fill" : "doc")
+                                .foregroundStyle(entry.isDir ? Color.accentColor : Theme.faint)
+                                .frame(width: 16)
+                            Text(entry.name).lineLimit(1)
+                            Spacer()
+                            if !entry.isDir {
+                                Text(Self.humanSize(entry.size))
+                                    .font(.caption).foregroundStyle(Theme.faint)
+                            }
+                        }
+                        .padding(.vertical, 3).padding(.horizontal, 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if entry.isDir { server.fsNavigate(to: server.fsPath + "/" + entry.name) }
+                            else { server.fsDownload(name: entry.name) }
+                        }
+                        .help(entry.isDir ? "Open folder" : "Click to download to your Mac")
+                    }
+                }
+            }
+            .frame(height: 240)
+            .background(fsDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear)
+            .overlay(alignment: .bottom) {
+                Text("Drop Mac files here to send to this folder")
+                    .font(.caption2).foregroundStyle(Theme.faint).padding(4)
+            }
+            .onDrop(of: [.fileURL], isTargeted: $fsDropTargeted) { providers in
+                for provider in providers {
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        Task { @MainActor in server.fsPush(urls: [url]) }
+                    }
+                }
+                return true
+            }
+        }
+    }
+
+    private static func humanSize(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     private var galleryGrid: some View {

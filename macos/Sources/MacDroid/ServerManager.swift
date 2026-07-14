@@ -30,6 +30,18 @@ final class ServerManager: ObservableObject {
     @Published var galleryThumbs: [GalleryThumb] = []
     @Published var galleryLoading = false
 
+    struct FileEntry: Identifiable {
+        var id: String { name }
+        let name: String
+        let isDir: Bool
+        let size: Int
+    }
+    @Published var fileBrowsing = false
+    @Published var fsPath = ""
+    @Published var fsParent = ""
+    @Published var fsEntries: [FileEntry] = []
+    @Published var fsNeedsPermission = false
+
     let micReceiver = MicReceiver()
     private let inputController = InputController()
     private let screenViewer = ScreenViewer()
@@ -274,6 +286,18 @@ final class ServerManager: ObservableObject {
                 return (id, ($0["name"] as? String) ?? "photo")
             }
             receiveGalleryThumbs(host: host, port: UInt16(port), items: parsed)
+
+        case "fs.entries":
+            guard isPaired else { return }
+            fileBrowsing = true
+            fsNeedsPermission = (packet.body["needsPermission"] as? Bool) ?? false
+            fsPath = packet.body["path"] as? String ?? fsPath
+            fsParent = packet.body["parent"] as? String ?? ""
+            let entries = packet.body["entries"] as? [[String: Any]] ?? []
+            fsEntries = entries.compactMap {
+                guard let name = $0["name"] as? String else { return nil }
+                return FileEntry(name: name, isDir: ($0["dir"] as? Bool) ?? false, size: ($0["size"] as? Int) ?? 0)
+            }
 
         case "macscreen.stop":
             stopMirrorToPhone(notifyPhone: false)
@@ -564,7 +588,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - File transfer: sending (Mac → phone)
 
-    func sendFile(url: URL) {
+    func sendFile(url: URL, toDir dir: String? = nil) {
         guard isPaired else { return }
         let name = url.lastPathComponent
         guard
@@ -590,7 +614,9 @@ final class ServerManager: ObservableObject {
                     switch state {
                     case .ready:
                         guard let filePort = fileListener.port?.rawValue else { return }
-                        self.send(Packet(type: "file.offer", body: ["name": name, "size": size, "port": Int(filePort)]))
+                        var offer: [String: Any] = ["name": name, "size": size, "port": Int(filePort)]
+                        if let dir { offer["dir"] = dir }
+                        self.send(Packet(type: "file.offer", body: offer))
                         self.transferStatus = "Sending \(name)…"
                         self.appendLog("Offering \(name) (\(Self.formatBytes(size))) on port \(filePort)")
                     case .failed(let error):
@@ -739,6 +765,48 @@ final class ServerManager: ObservableObject {
 
     /// Ask the phone for its most recent photo/screenshot. `completion` gets a
     /// local temp-file URL (or nil on failure/timeout). One pull at a time.
+    // MARK: - File browser (Mac ↔ phone storage)
+
+    func browsePhoneFiles() {
+        guard isPaired else { return }
+        fileBrowsing = true
+        fsEntries = []
+        send(Packet(type: "fs.list", body: ["path": ""])) // "" = storage root on the phone
+        appendLog("Opening phone file browser…")
+    }
+
+    func fsNavigate(to path: String) {
+        guard isPaired else { return }
+        send(Packet(type: "fs.list", body: ["path": path]))
+    }
+
+    func fsDownload(name: String) {
+        guard isPaired, !fsPath.isEmpty else { return }
+        expectingPickedPhotos = true // reveal in Finder on arrival
+        send(Packet(type: "fs.pull", body: ["path": fsPath + "/" + name]))
+        appendLog("Downloading \(name)…")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.expectingPickedPhotos = false
+        }
+    }
+
+    /// Push Mac files into the folder currently open in the browser.
+    func fsPush(urls: [URL]) {
+        guard isPaired, !fsPath.isEmpty else { return }
+        for url in urls { sendFile(url: url, toDir: fsPath) }
+        // Refresh the listing shortly after so the pushed files appear.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            self.fsNavigate(to: self.fsPath)
+        }
+    }
+
+    func closeFileBrowser() {
+        fileBrowsing = false
+        fsEntries = []
+        fsPath = ""
+    }
+
     // MARK: - Gallery browser
 
     func browsePhoneGallery() {

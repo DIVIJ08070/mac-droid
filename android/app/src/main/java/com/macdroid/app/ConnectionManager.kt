@@ -498,6 +498,107 @@ object ConnectionManager {
 
     // MARK: file transfer — sending (phone → Mac)
 
+    // MARK: file manager (browse the phone's storage from the Mac)
+
+    private val storageRoot: String
+        get() = android.os.Environment.getExternalStorageDirectory().absolutePath
+
+    private fun hasAllFilesAccess(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 30 ||
+            android.os.Environment.isExternalStorageManager()
+
+    fun requestAllFilesAccess() {
+        try {
+            appContext.startActivity(
+                Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:${appContext.packageName}")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+            try {
+                appContext.startActivity(
+                    Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun serveFsList(requestedPath: String) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val path = requestedPath.ifEmpty { storageRoot }
+            if (!hasAllFilesAccess()) {
+                appendLog("Grant 'All files access' on the phone to browse files")
+                requestAllFilesAccess()
+                send(Packet("fs.entries", JSONObject().apply {
+                    put("path", path)
+                    put("needsPermission", true)
+                    put("entries", org.json.JSONArray())
+                }))
+                return@launch
+            }
+            try {
+                val dir = java.io.File(path)
+                val arr = org.json.JSONArray()
+                dir.listFiles()
+                    ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                    ?.forEach { f ->
+                        arr.put(JSONObject().apply {
+                            put("name", f.name)
+                            put("dir", f.isDirectory)
+                            put("size", if (f.isDirectory) 0L else f.length())
+                        })
+                    }
+                send(Packet("fs.entries", JSONObject().apply {
+                    put("path", dir.absolutePath)
+                    put("parent", dir.parentFile?.absolutePath ?: "")
+                    put("entries", arr)
+                }))
+            } catch (e: Exception) {
+                appendLog("Cannot list $path: ${e.message}")
+            }
+        }
+    }
+
+    private fun sendFileFromPath(file: java.io.File) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                if (!file.exists() || !file.isFile) {
+                    appendLog("File not found: ${file.name}")
+                    return@launch
+                }
+                val size = file.length()
+                java.net.ServerSocket(0).use { server ->
+                    server.soTimeout = 15000
+                    send(Packet("file.offer", JSONObject().apply {
+                        put("name", file.name)
+                        put("size", size)
+                        put("port", server.localPort)
+                    }))
+                    appendLog("Sending ${file.name} to Mac")
+                    server.accept().use { client ->
+                        client.tcpNoDelay = true
+                        file.inputStream().use { input ->
+                            val out = client.getOutputStream()
+                            val buf = ByteArray(65536)
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                            }
+                            out.flush()
+                        }
+                    }
+                }
+                appendLog("Sent ${file.name} ✓")
+            } catch (e: Exception) {
+                appendLog("Send failed: ${e.message}")
+            }
+        }
+    }
+
     /** Stream thumbnails of recent gallery photos to the Mac's gallery browser. */
     private fun serveGalleryThumbnails() {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -648,7 +749,13 @@ object ConnectionManager {
 
     // MARK: file transfer — receiving (Mac → phone)
 
-    private fun receiveFile(name: String, size: Long, port: Int) {
+    private fun receiveFile(name: String, size: Long, port: Int, dir: String = "") {
+        // If a target folder is given and we have all-files access, write there directly
+        // (file-manager push). Otherwise fall back to MediaStore Downloads.
+        if (dir.isNotEmpty() && hasAllFilesAccess()) {
+            receiveFileToDir(name, size, port, dir)
+            return
+        }
         val host = currentMac?.host ?: return
         scope.launch {
             var savedUri: Uri? = null
@@ -691,6 +798,40 @@ object ConnectionManager {
             } catch (e: Exception) {
                 appendLog("Receive failed: ${e.message}")
                 savedUri?.let { appContext.contentResolver.delete(it, null, null) }
+            } finally {
+                _transferStatus.value = null
+            }
+        }
+    }
+
+    /** File-manager push: write a Mac file straight into a phone folder. */
+    private fun receiveFileToDir(name: String, size: Long, port: Int, dir: String) {
+        val host = currentMac?.host ?: return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val dest = java.io.File(dir, name.replace("/", "_"))
+            try {
+                _transferStatus.value = "Receiving $name…"
+                Socket().use { transferSocket ->
+                    transferSocket.connect(InetSocketAddress(host, port), 10000)
+                    dest.outputStream().use { out ->
+                        val input = transferSocket.getInputStream()
+                        val buf = ByteArray(65536)
+                        var received = 0L
+                        while (received < size) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            received += n
+                            _transferStatus.value =
+                                "Receiving $name… ${(received * 100 / size).coerceAtMost(100)}%"
+                        }
+                        if (received < size) throw IllegalStateException("Connection closed early")
+                    }
+                }
+                appendLog("Received $name → $dir ✓")
+            } catch (e: Exception) {
+                appendLog("Receive failed: ${e.message}")
+                dest.delete()
             } finally {
                 _transferStatus.value = null
             }
@@ -752,7 +893,8 @@ object ConnectionManager {
                 val name = packet.body.optString("name", "file")
                 val size = packet.body.optLong("size", -1)
                 val port = packet.body.optInt("port", -1)
-                if (size >= 0 && port > 0) receiveFile(name, size, port)
+                val dir = packet.body.optString("dir", "")
+                if (size >= 0 && port > 0) receiveFile(name, size, port, dir)
             }
 
             "pull.request" -> {
@@ -771,6 +913,17 @@ object ConnectionManager {
             "gallery.request" -> {
                 if (_state.value != ConnectionState.PAIRED) return
                 serveGalleryThumbnails()
+            }
+
+            "fs.list" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                serveFsList(packet.body.optString("path", ""))
+            }
+
+            "fs.pull" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val path = packet.body.optString("path")
+                if (path.isNotEmpty()) sendFileFromPath(java.io.File(path))
             }
 
             "gallery.pull" -> {
