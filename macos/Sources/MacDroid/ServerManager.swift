@@ -668,6 +668,9 @@ final class ServerManager: ObservableObject {
                     completePull(destination)
                 } else {
                     appendLog("Received \(name) → Downloads ✓")
+                    if self.expectingPickedPhotos {
+                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                    }
                 }
             } else {
                 try? FileManager.default.removeItem(at: destination)
@@ -716,6 +719,21 @@ final class ServerManager: ObservableObject {
 
     /// Ask the phone for its most recent photo/screenshot. `completion` gets a
     /// local temp-file URL (or nil on failure/timeout). One pull at a time.
+    /// Ask the phone to open its photo picker; chosen photos arrive as normal
+    /// transfers into Downloads and are revealed in Finder.
+    func pullPhotosFromPhone() {
+        guard isPaired else { return }
+        expectingPickedPhotos = true
+        send(Packet(type: "pull.request", body: ["kind": "pick"]))
+        appendLog("Opening photo picker on the phone — choose photos there")
+        // Stop revealing in Finder a minute after the request.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.expectingPickedPhotos = false
+        }
+    }
+
+    private var expectingPickedPhotos = false
+
     func pullLatestImage(_ completion: @escaping (URL?) -> Void) {
         guard isPaired else { completion(nil); return }
         guard pullCompletion == nil else { completion(nil); return }

@@ -316,6 +316,7 @@ struct ContentView: View {
                 } else {
                     Button("Mirror Mac to phone") { server.startMirrorToPhone() }
                 }
+                Button("Pull photos from phone…") { server.pullPhotosFromPhone() }
                 Button("Ping phone") { server.pingPhone() }
             }
         }

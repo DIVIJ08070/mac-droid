@@ -498,6 +498,13 @@ object ConnectionManager {
 
     // MARK: file transfer — sending (phone → Mac)
 
+    /** Send the photos the user picked in the phone's photo picker to the Mac. */
+    fun sendPickedPhotos(uris: List<Uri>) {
+        if (_state.value != ConnectionState.PAIRED) return
+        appendLog("Sending ${uris.size} picked photo(s) to Mac")
+        uris.forEach { sendFile(it) }
+    }
+
     /** Drag-out from the Mac: send the phone's most recent image (photo/screenshot). */
     private fun sendLatestImage() {
         scope.launch {
@@ -688,7 +695,15 @@ object ConnectionManager {
 
             "pull.request" -> {
                 if (_state.value != ConnectionState.PAIRED) return
-                sendLatestImage()
+                when (packet.body.optString("kind", "latest_image")) {
+                    "pick" -> {
+                        // Open the phone's photo picker so the user chooses exact photos.
+                        val intent = Intent(appContext, PhotoPickActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        appContext.startActivity(intent)
+                    }
+                    else -> sendLatestImage()
+                }
             }
 
             "url" -> {

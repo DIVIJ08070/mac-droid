@@ -85,7 +85,7 @@ final class ScreenViewer: NSObject {
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false
         )
-        win.title = "Phone Screen  —  drop files to send · ⌥-drag out for latest photo"
+        win.title = "Phone Screen  —  drop files to send · ⌥/Alt-drag out for latest photo"
         win.isReleasedWhenClosed = false
         win.center()
         win.delegate = self
