@@ -34,7 +34,18 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "macos/$BIN" "$APP/Contents/MacOS/MacDroid"
 cp macos/Resources/Info.plist "$APP/Contents/Info.plist"
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --deep -s - "$APP"
+# Sign with a stable self-signed identity so macOS keeps Screen Recording and
+# other permissions across rebuilds (ad-hoc signing changes identity each build,
+# which makes macOS forget the grant). Falls back to ad-hoc if the cert is absent.
+SIGN_KC="$HOME/Library/Keychains/macdroid-signing.keychain-db"
+if security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "MacDroid Self-Signed"; then
+  security unlock-keychain -p macdroid "$SIGN_KC" 2>/dev/null
+  codesign --force --deep -s "MacDroid Self-Signed" --keychain "$SIGN_KC" "$APP"
+  echo "   signed with stable self-signed identity"
+else
+  codesign --force --deep -s - "$APP"
+  echo "   ad-hoc signed (no stable cert found)"
+fi
 
 mkdir -p website/downloads
 ditto -c -k --keepParent "$APP" website/downloads/MacDroid.app.zip
