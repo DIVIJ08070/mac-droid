@@ -1,9 +1,9 @@
 import Foundation
 import UserNotifications
 
-/// Shows native macOS notifications mirrored from the phone.
+/// Shows native macOS banner notifications mirrored from the phone.
 @MainActor
-final class Notifier {
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
     private var authorized = false
 
@@ -13,7 +13,9 @@ final class Notifier {
 
     func requestAuthorization() {
         guard available else { return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             Task { @MainActor in self?.authorized = granted }
         }
     }
@@ -21,7 +23,6 @@ final class Notifier {
     func show(app: String, title: String, body: String) {
         guard available else { return }
         let content = UNMutableNotificationContent()
-        // Put the app name in the title so you can tell where it's from.
         if title.isEmpty {
             content.title = app
             content.body = body
@@ -34,5 +35,15 @@ final class Notifier {
             identifier: UUID().uuidString, content: content, trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Show the banner even when MacDroid itself is the active app (macOS would
+    /// otherwise silently drop it into Notification Center).
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 }
