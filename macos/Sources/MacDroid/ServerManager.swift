@@ -482,9 +482,21 @@ final class ServerManager: ObservableObject {
 
     @Published var desktopStarting = false
 
-    private static let adbPath = NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
-    private static var scrcpyPath: String? {
+    private nonisolated static var adbPath: String {
+        let candidates = [
+            NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
+            "/opt/homebrew/bin/adb",
+            "/usr/local/bin/adb",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? candidates[0]
+    }
+    private nonisolated static var hasADB: Bool { FileManager.default.isExecutableFile(atPath: adbPath) }
+    private nonisolated static var scrcpyPath: String? {
         ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+    private nonisolated static var brewPath: String? {
+        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
@@ -494,7 +506,7 @@ final class ServerManager: ObservableObject {
     func launchDesktopMode() {
         guard !desktopStarting else { return }
         guard let scrcpy = Self.scrcpyPath else {
-            appendLog("Desktop Mode needs scrcpy — open Terminal and run: brew install scrcpy")
+            offerDesktopModeInstall()
             return
         }
         desktopStarting = true
@@ -512,6 +524,75 @@ final class ServerManager: ObservableObject {
                 self.spawnScrcpy(scrcpy)
             }
         }
+    }
+
+    /// scrcpy is missing: ask permission, then install it (and ADB platform-tools
+    /// if needed) with Homebrew, and start Desktop Mode when done.
+    private func offerDesktopModeInstall() {
+        guard let brew = Self.brewPath else {
+            appendLog("Desktop Mode needs scrcpy, and Homebrew isn't installed — get Homebrew from brew.sh, then run: brew install scrcpy")
+            let alert = NSAlert()
+            alert.messageText = "Desktop Mode needs scrcpy"
+            alert.informativeText = "Bifrost can't install it automatically because Homebrew isn't on this Mac. Install Homebrew from brew.sh, then run “brew install scrcpy” in Terminal — Desktop Mode will work right after."
+            alert.addButton(withTitle: "OK")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Install scrcpy for Desktop Mode?"
+        alert.informativeText = Self.hasADB
+            ? "Desktop Mode is powered by scrcpy (free, open source). Bifrost will run “brew install scrcpy” for you — it usually takes a couple of minutes, then Desktop Mode starts automatically."
+            : "Desktop Mode is powered by scrcpy and ADB (both free, open source). Bifrost will install them with Homebrew for you — it usually takes a couple of minutes, then Desktop Mode starts automatically."
+        alert.addButton(withTitle: "Install")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            appendLog("Desktop Mode: scrcpy install cancelled")
+            return
+        }
+        installDesktopModeTools(brew: brew)
+    }
+
+    private func installDesktopModeTools(brew: String) {
+        desktopStarting = true
+        appendLog("Installing scrcpy with Homebrew — this can take a few minutes…")
+        Task.detached { [weak self] in
+            var (status, output) = Self.runBrew(brew, ["install", "scrcpy"])
+            if status == 0 && !Self.hasADB {
+                await MainActor.run { self?.appendLog("Installing ADB platform-tools…") }
+                (status, output) = Self.runBrew(brew, ["install", "--cask", "android-platform-tools"])
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.desktopStarting = false
+                if status == 0, Self.scrcpyPath != nil {
+                    self.appendLog("scrcpy installed ✓ — starting Desktop Mode")
+                    self.launchDesktopMode()
+                } else {
+                    let tail = output.split(separator: "\n").suffix(3).joined(separator: " · ")
+                    self.appendLog("Install failed (\(tail)) — run “brew install scrcpy” in Terminal instead.")
+                }
+            }
+        }
+    }
+
+    private nonisolated static func runBrew(_ brew: String, _ args: [String]) -> (Int32, String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: brew)
+        process.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:" + (env["PATH"] ?? "")
+        env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+        process.environment = env
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return (1, error.localizedDescription) }
+        // Drain the pipe before waiting so a chatty install can't deadlock on a full buffer.
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+        return (process.terminationStatus, output)
     }
 
     /// Ensure an ADB device is present; if not, restart the server and try to
