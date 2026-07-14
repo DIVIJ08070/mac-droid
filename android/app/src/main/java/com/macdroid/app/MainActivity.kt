@@ -60,6 +60,9 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    private val mediaPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onResume() {
         super.onResume()
         isInForeground = true
@@ -134,6 +137,13 @@ class MainActivity : ComponentActivity() {
             != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // For drag-out of the latest photo from the mirror window.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            mediaPermission.launch(Manifest.permission.READ_MEDIA_IMAGES)
         }
     }
 }

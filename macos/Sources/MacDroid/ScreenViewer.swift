@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Foundation
 import Network
+import UniformTypeIdentifiers
 import VideoToolbox
 
 /// Receives the phone's screen as raw H.264 Annex-B over TCP, decodes it with
@@ -13,6 +14,10 @@ final class ScreenViewer: NSObject {
     /// Emits a normalized (0–1) input gesture. tap: only (x,y). swipe: all four + ms.
     var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
     var onKey: ((_ text: String?, _ special: String?) -> Void)?
+    /// Files dropped onto the mirror window (to push to the phone).
+    var onDropFiles: (([URL]) -> Void)?
+    /// Called when an Option-drag out begins; provide the pulled file to `completion`.
+    var onPullFile: ((_ completion: @escaping (URL?) -> Void) -> Void)?
 
     private var window: NSWindow?
     private var inputView: ScreenInputView?
@@ -80,7 +85,7 @@ final class ScreenViewer: NSObject {
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false
         )
-        win.title = "Phone Screen"
+        win.title = "Phone Screen  —  drop files to send · ⌥-drag out for latest photo"
         win.isReleasedWhenClosed = false
         win.center()
         win.delegate = self
@@ -99,6 +104,12 @@ final class ScreenViewer: NSObject {
         }
         hostView.onKey = { [weak self] text, special in
             self?.onKey?(text, special)
+        }
+        hostView.onDropFiles = { [weak self] urls in
+            self?.onDropFiles?(urls)
+        }
+        hostView.onPullFile = { [weak self] completion in
+            self?.onPullFile?(completion)
         }
         win.contentView?.addSubview(hostView)
 
@@ -257,17 +268,47 @@ extension ScreenViewer: NSWindowDelegate {
 
 /// Hosts the video layer and converts mouse clicks/drags into normalized (0–1)
 /// phone coordinates, accounting for the letterboxing of aspect-fit video.
-final class ScreenInputView: NSView {
+final class ScreenInputView: NSView, NSFilePromiseProviderDelegate, NSDraggingSource {
     var videoSize = CGSize(width: 1, height: 1)
     var onInput: ((_ action: String, _ x: Double, _ y: Double, _ x2: Double, _ y2: Double, _ ms: Int) -> Void)?
     /// Keyboard passthrough: (text, special). Exactly one is non-nil.
     var onKey: ((_ text: String?, _ special: String?) -> Void)?
+    var onDropFiles: (([URL]) -> Void)?
+    var onPullFile: ((_ completion: @escaping (URL?) -> Void) -> Void)?
 
     private var downPoint: CGPoint?
     private var downTime: TimeInterval = 0
+    private var optionDrag = false
+
+    // Pull (drag-out) state
+    private let promiseQueue = OperationQueue()
+    private var pulledURL: URL?
+    private var pullStarted = false
+    private var pullWaiters: [(URL?) -> Void] = []
 
     override var isFlipped: Bool { true } // top-left origin, matching the phone
     override var acceptsFirstResponder: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    // MARK: drag IN (Mac files → phone)
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        sender.draggingSourceOperationMask.contains(.copy) ? .copy : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
+              !urls.isEmpty else { return false }
+        onDropFiles?(urls)
+        return true
+    }
 
     /// Maps a view-space point to the video's normalized coordinates, clamped to 0–1.
     private func normalized(_ p: CGPoint) -> CGPoint? {
@@ -285,9 +326,22 @@ final class ScreenInputView: NSView {
     override func mouseDown(with event: NSEvent) {
         downPoint = convert(event.locationInWindow, from: nil)
         downTime = event.timestamp
+        optionDrag = event.modifierFlags.contains(.option)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        // Option-drag = pull a file OUT to Finder (not a phone swipe).
+        guard optionDrag, let down = downPoint else { return }
+        let now = convert(event.locationInWindow, from: nil)
+        if hypot(now.x - down.x, now.y - down.y) > 10 {
+            optionDrag = false // consume — begin one drag session
+            downPoint = nil
+            beginPullDrag(at: down, event: event)
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
+        defer { optionDrag = false }
         guard let down = downPoint, let start = normalized(down) else { downPoint = nil; return }
         let up = convert(event.locationInWindow, from: nil)
         let dragDistance = hypot(up.x - down.x, up.y - down.y)
@@ -298,6 +352,69 @@ final class ScreenInputView: NSView {
             onInput?("swipe", start.x, start.y, end.x, end.y, ms)
         }
         downPoint = nil
+    }
+
+    // MARK: drag OUT (phone photo → Finder) via file promise
+
+    private func beginPullDrag(at point: CGPoint, event: NSEvent) {
+        // Kick off the pull immediately so the file is likely ready by drop time.
+        pullStarted = true
+        pulledURL = nil
+        pullWaiters.removeAll()
+        onPullFile? { [weak self] url in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pulledURL = url
+                let waiters = self.pullWaiters
+                self.pullWaiters.removeAll()
+                waiters.forEach { $0(url) }
+            }
+        }
+
+        let provider = NSFilePromiseProvider(fileType: UTType.image.identifier, delegate: self)
+        let item = NSDraggingItem(pasteboardWriter: provider)
+        let icon = NSWorkspace.shared.icon(for: .image)
+        let frame = NSRect(x: point.x - 24, y: point.y - 24, width: 48, height: 48)
+        item.setDraggingFrame(frame, contents: icon)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    private func awaitPull(_ callback: @escaping (URL?) -> Void) {
+        if let pulledURL { callback(pulledURL) }
+        else if !pullStarted { callback(nil) }
+        else { pullWaiters.append(callback) }
+    }
+
+    // NSDraggingSource
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        .copy
+    }
+
+    // NSFilePromiseProviderDelegate
+    func filePromiseProvider(_ provider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
+        pulledURL?.lastPathComponent ?? "phone-photo.jpg"
+    }
+
+    func filePromiseProvider(_ provider: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping (Error?) -> Void) {
+        awaitPull { src in
+            guard let src else {
+                completionHandler(NSError(domain: "MacDroid", code: 1, userInfo: [NSLocalizedDescriptionKey: "No photo received from phone"]))
+                return
+            }
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+                try FileManager.default.copyItem(at: src, to: url)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
+
+    func operationQueue(for provider: NSFilePromiseProvider) -> OperationQueue {
+        promiseQueue
     }
 
     // Scroll wheel → vertical swipe (natural direction).

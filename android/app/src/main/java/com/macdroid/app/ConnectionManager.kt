@@ -498,7 +498,30 @@ object ConnectionManager {
 
     // MARK: file transfer — sending (phone → Mac)
 
-    private fun sendFile(uri: Uri) {
+    /** Drag-out from the Mac: send the phone's most recent image (photo/screenshot). */
+    private fun sendLatestImage() {
+        scope.launch {
+            try {
+                val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(MediaStore.Images.Media._ID)
+                val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                appContext.contentResolver.query(collection, projection, null, null, sort)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                        val uri = android.content.ContentUris.withAppendedId(collection, id)
+                        appendLog("Sending latest photo to Mac (drag-out)")
+                        sendFile(uri, pull = true)
+                    } else {
+                        appendLog("No photos found to pull")
+                    }
+                }
+            } catch (e: Exception) {
+                appendLog("Pull failed: ${e.message}")
+            }
+        }
+    }
+
+    private fun sendFile(uri: Uri, pull: Boolean = false) {
         scope.launch {
             try {
                 val resolver = appContext.contentResolver
@@ -523,6 +546,7 @@ object ConnectionManager {
                         put("name", name)
                         put("size", size)
                         put("port", server.localPort)
+                        if (pull) put("pull", true)
                     }))
                     _transferStatus.value = "Sending $name…"
                     appendLog("Offering $name (${size / 1024} KB)")
@@ -660,6 +684,11 @@ object ConnectionManager {
                 val size = packet.body.optLong("size", -1)
                 val port = packet.body.optInt("port", -1)
                 if (size >= 0 && port > 0) receiveFile(name, size, port)
+            }
+
+            "pull.request" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                sendLatestImage()
             }
 
             "url" -> {

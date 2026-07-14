@@ -43,6 +43,7 @@ One JSON object per line, terminated by `\n`:
 | `macscreen.request` | Android → Mac | `{}` | ask the Mac to mirror its screen to the phone |
 | `macscreen.start` | Mac → Android | `{"width": 1280, "height": 800, "port": 54321}` | Mac screen stream ready: raw H.264 Annex-B on the side channel; phone opens a viewer |
 | `macscreen.stop` | both | `{}` | end the Mac→phone screen stream |
+| `pull.request` | Mac → Android | `{"kind": "latest_image"}` | drag-out: Mac requests the phone's most recent photo; phone replies with a `file.offer` carrying `"pull": true`, which the Mac routes into the drag instead of Downloads |
 
 ## Audio streaming
 Same side-channel pattern as files, but continuous:

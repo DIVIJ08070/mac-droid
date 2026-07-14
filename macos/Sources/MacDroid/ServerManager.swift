@@ -60,6 +60,15 @@ final class ServerManager: ObservableObject {
             if let special { body["special"] = special }
             self.send(Packet(type: "screen.key", body: body))
         }
+        // Drag files ONTO the mirror window → send them to the phone.
+        screenViewer.onDropFiles = { [weak self] urls in
+            guard let self, self.isPaired else { return }
+            for url in urls { self.sendFile(url: url) }
+        }
+        // Option-drag OUT of the mirror window → pull the phone's latest photo.
+        screenViewer.onPullFile = { [weak self] completion in
+            self?.pullLatestImage(completion)
+        }
 
         // Handoff-style tab sync: poll the front browser tab and push changes to the phone.
         tabTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -256,7 +265,8 @@ final class ServerManager: ObservableObject {
                   let port = packet.body["port"] as? Int,
                   let host = remoteHost()
             else { return }
-            receiveFile(name: name, size: size, host: host, port: UInt16(port))
+            let isPull = (packet.body["pull"] as? Bool) ?? false
+            receiveFile(name: name, size: size, host: host, port: UInt16(port), pull: isPull)
 
         default:
             appendLog("Unknown packet: \(packet.type)")
@@ -624,19 +634,26 @@ final class ServerManager: ObservableObject {
         return host
     }
 
-    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16) {
+    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16, pull: Bool = false) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let destination = Self.uniqueDestination(in: downloads, name: Self.sanitize(name))
+        // Pulled files (drag-out) go to a temp dir and are handed to the drag; normal
+        // transfers land in Downloads.
+        let directory = pull
+            ? FileManager.default.temporaryDirectory
+            : FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let destination = Self.uniqueDestination(in: directory, name: Self.sanitize(name))
 
         FileManager.default.createFile(atPath: destination.path, contents: nil)
         guard let handle = try? FileHandle(forWritingTo: destination) else {
             appendLog("Cannot write to \(destination.path)")
+            if pull { completePull(nil) }
             return
         }
 
-        transferStatus = "Receiving \(name)…"
-        appendLog("Receiving \(name) (\(Self.formatBytes(size)))")
+        if !pull {
+            transferStatus = "Receiving \(name)…"
+            appendLog("Receiving \(name) (\(Self.formatBytes(size)))")
+        }
 
         let transferConnection = NWConnection(host: host, port: nwPort, using: .tcp)
         var received = 0
@@ -646,10 +663,16 @@ final class ServerManager: ObservableObject {
             transferConnection.cancel()
             transferStatus = nil
             if success {
-                appendLog("Received \(name) → Downloads ✓")
+                if pull {
+                    appendLog("Pulled \(name) from phone")
+                    completePull(destination)
+                } else {
+                    appendLog("Received \(name) → Downloads ✓")
+                }
             } else {
                 try? FileManager.default.removeItem(at: destination)
                 appendLog("Receive of \(name) failed")
+                if pull { completePull(nil) }
             }
         }
 
@@ -687,6 +710,31 @@ final class ServerManager: ObservableObject {
         transferConnection.start(queue: .main)
     }
 
+    // MARK: - Pull latest photo (drag-out from the mirror window)
+
+    private var pullCompletion: ((URL?) -> Void)?
+
+    /// Ask the phone for its most recent photo/screenshot. `completion` gets a
+    /// local temp-file URL (or nil on failure/timeout). One pull at a time.
+    func pullLatestImage(_ completion: @escaping (URL?) -> Void) {
+        guard isPaired else { completion(nil); return }
+        guard pullCompletion == nil else { completion(nil); return }
+        pullCompletion = completion
+        send(Packet(type: "pull.request", body: ["kind": "latest_image"]))
+        appendLog("Pulling latest photo from phone…")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.pullCompletion != nil else { return }
+            self.appendLog("Pull timed out")
+            self.completePull(nil)
+        }
+    }
+
+    private func completePull(_ url: URL?) {
+        guard let completion = pullCompletion else { return }
+        pullCompletion = nil
+        completion(url)
+    }
+
     // MARK: - Plumbing
 
     private func send(_ packet: Packet) {
@@ -716,6 +764,7 @@ final class ServerManager: ObservableObject {
         macScreenSender?.stop()
         macScreenSender = nil
         mirroringToPhone = false
+        completePull(nil)
         statusBar.hide()
         phoneTabURL = nil
         phoneTabTitle = ""
