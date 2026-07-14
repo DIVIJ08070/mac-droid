@@ -270,8 +270,9 @@ private fun DiscoveryPane() {
         Entrance(1) {
             DarkCard {
                 Text(
-                    "1  Open the MacDroid app on your Mac\n" +
-                        "2  Keep both devices on the same Wi-Fi\n" +
+                    "1  Open the Bifrost app on your Mac\n" +
+                        "2  Connect both devices: same Wi-Fi, this\n" +
+                        "   phone's hotspot, USB cable, or Tailscale\n" +
                         "3  Your Mac appears below — tap it",
                     color = MdWhite60,
                     fontFamily = FontFamily.Monospace,
@@ -315,7 +316,7 @@ private fun DiscoveryPane() {
                                 fontSize = 14.sp,
                             )
                             Text(
-                                "Is Bifrost open on your Mac?\nSame Wi-Fi network?",
+                                "Is Bifrost open on your Mac?\nSame Wi-Fi or hotspot? USB works too —\nuse Connect by address → 127.0.0.1",
                                 color = MdWhite40,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,

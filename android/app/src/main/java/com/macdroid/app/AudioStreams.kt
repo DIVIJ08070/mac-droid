@@ -72,7 +72,7 @@ class MicStreamer(
                     }
                 }
             } catch (e: java.net.SocketTimeoutException) {
-                if (running) onLog("The Mac never connected to the mic stream — are both devices still on the same Wi-Fi? Check the Mac's Activity log and try again.")
+                if (running) onLog("The Mac never connected to the mic stream — are both devices still on the same network (Wi-Fi or hotspot)? Check the Mac's Activity log and try again.")
             } catch (e: Exception) {
                 if (running) onLog("Mic stream ended: ${e.message}")
             } finally {

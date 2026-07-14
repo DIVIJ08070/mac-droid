@@ -173,8 +173,11 @@
            First launch: <strong>right-click → Open</strong> to pass Gatekeeper.</p></div>
       <div class="step"><h3>Install on the phone</h3>
         <p>Download the APK and tap it. Allow "install unknown apps" for your browser when Android asks — that's normal for apps outside the Play Store.</p></div>
-      <div class="step"><h3>Pair</h3>
-        <p>Same Wi-Fi, open both apps. Tap your Mac on the phone, check the 6-digit code matches, click Accept on the Mac. Done — forever.</p></div>
+      <div class="step"><h3>Connect &amp; pair</h3>
+        <p>Connect the devices any of four ways: <strong>same Wi-Fi</strong>, the <strong>phone's hotspot</strong>
+           (works anywhere, no data used), a <strong>USB cable</strong> ("Set up the USB link" on the Mac →
+           Connect by address → 127.0.0.1 on the phone), or <strong>Tailscale</strong> for remote. Then open both
+           apps, tap your Mac on the phone, check the 6-digit code matches, click Accept on the Mac. Done — forever.</p></div>
       <div class="step"><h3>Grant as you go</h3>
         <p>Each feature asks for its permission the first time you use it (touchpad → Accessibility, audio → Screen &amp; System Audio Recording, tab sync → Automation / Accessibility).</p></div>
     </div>
@@ -221,7 +224,9 @@
       <summary>Does it work away from home?</summary>
       <p>Yes — the simplest way is your phone's <strong>mobile hotspot</strong>: connect the Mac to it and
          everything works exactly like home Wi-Fi (the phone is the router, so both devices share a
-         network — no internet Wi-Fi needed). Great on trains, cafés, anywhere.</p>
+         network — no internet Wi-Fi needed). Great on trains, cafés, anywhere. A <strong>USB cable</strong>
+         also works with zero network: click "Set up the USB link" in the Mac app, then on the phone use
+         Connect by address → <code>127.0.0.1</code>.</p>
       <p style="margin-top:8px">For true remote access over the internet, use the optional
          <strong>Connect by address</strong> option (bottom of the phone's connect screen) together with
          <a href="https://tailscale.com/download" style="color:var(--accent2)">Tailscale</a> — a free mesh VPN:</p>

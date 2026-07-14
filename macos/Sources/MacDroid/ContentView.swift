@@ -171,10 +171,14 @@ struct ContentView: View {
                         .font(Theme.mono(24, .light))
                         .foregroundStyle(.white)
                 }
-                Text("Open Bifrost on your phone — same Wi-Fi.")
+                Text("Open Bifrost on your phone — connect any way you like: same Wi-Fi, the phone's hotspot, a USB cable, or Tailscale from anywhere.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
-                Text("Away from home? Connect by address on the phone using your Tailscale IP · port \(String(ServerManager.fixedPort)).")
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Using a USB cable? Set up the USB link") { server.enableUSBLink() }
+                    .buttonStyle(PillButtonStyle(kind: .secondary, size: 11))
+                Text("Away from home? Connect by address on the phone using your Tailscale IP · port \(String(ServerManager.fixedPort)). USB uses 127.0.0.1:\(String(ServerManager.fixedPort)).")
                     .font(Theme.mono(10))
                     .foregroundStyle(Color.white.opacity(0.32))
                     .fixedSize(horizontal: false, vertical: true)

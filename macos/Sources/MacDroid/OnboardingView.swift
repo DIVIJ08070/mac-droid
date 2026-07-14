@@ -27,7 +27,7 @@ struct OnboardingView: View {
             label: "Step 1 — The phone",
             headingTop: "One app",
             headingBottom: "on each side.",
-            body: "Install Bifrost on your Android phone.\nThen make sure both devices are on the same Wi-Fi network. That's the whole setup.",
+            body: "Install Bifrost on your Android phone.\nThen connect the two any way you like: same Wi-Fi, the phone's hotspot, a USB cable, or Tailscale from anywhere.",
             icon: "wifi"
         ),
         Page(

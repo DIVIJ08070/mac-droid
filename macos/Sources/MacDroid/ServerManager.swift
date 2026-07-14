@@ -599,6 +599,29 @@ final class ServerManager: ObservableObject {
         return (process.terminationStatus, output)
     }
 
+    // MARK: USB link
+
+    /// Connect over a USB cable: ADB reverse-tunnels the Mac's fixed port onto
+    /// the phone's localhost, so the phone reaches this Mac with no network at
+    /// all via Connect by address → 127.0.0.1.
+    func enableUSBLink() {
+        appendLog("USB link: looking for the phone over ADB…")
+        Task.detached { [weak self] in
+            let ok = Self.ensureAdbDevice()
+            if ok {
+                _ = Self.runADB(["reverse", "tcp:\(Self.fixedPort)", "tcp:\(Self.fixedPort)"])
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if ok {
+                    self.appendLog("USB link ready ✓ — on the phone: Bifrost → Connect by address → 127.0.0.1:\(Self.fixedPort)")
+                } else {
+                    self.appendLog("USB link: no phone over ADB. Plug in the cable, enable USB debugging (Settings → Developer options), then try again.")
+                }
+            }
+        }
+    }
+
     // MARK: Desktop Mode setup guide
 
     @Published var setupScrcpyReady = false

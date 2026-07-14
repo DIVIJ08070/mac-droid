@@ -62,7 +62,7 @@ struct DesktopSetupView: View {
                     doneLine("Phone reachable over ADB.")
                 } else {
                     bullet("Settings → About phone → Software information → tap “Build number” 7 times (skip if you already see Developer options)")
-                    bullet("Settings → Developer options → turn ON “Wireless debugging” — phone on the same Wi-Fi as this Mac")
+                    bullet("Settings → Developer options → turn ON “Wireless debugging” — same Wi-Fi or the phone's hotspot. With a USB cable, plain “USB debugging” is enough.")
                 }
             }
 

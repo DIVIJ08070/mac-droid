@@ -65,8 +65,9 @@ private val pages = listOf(
     OnboardPage(
         kicker = "02 · SETUP",
         title = "Install the\nMac app.",
-        body = "Download MacDroid for macOS from the website and open it.\n\n" +
-            "Keep both devices on the same Wi-Fi network — that's the whole setup.",
+        body = "Download Bifrost for macOS from the website and open it.\n\n" +
+            "Then connect the two any way you like — same Wi-Fi, this phone's hotspot, " +
+            "a USB cable, or Tailscale from anywhere.",
     ),
     OnboardPage(
         kicker = "03 · PAIRING",

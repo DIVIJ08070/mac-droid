@@ -84,7 +84,7 @@ final class MicReceiver: ObservableObject {
                 case .failed(let error), .waiting(let error):
                     // .waiting means unreachable (e.g. connection refused) — on a LAN
                     // dial-back there is nothing to wait for, so treat it as failure.
-                    self.onLog?("Couldn't reach the phone's mic stream (\(error.localizedDescription)) — are both devices on the same Wi-Fi?")
+                    self.onLog?("Couldn't reach the phone's mic stream (\(error.localizedDescription)) — are both devices still on the same network (Wi-Fi or hotspot)?")
                     self.stop()
                 case .cancelled:
                     self.stop()
