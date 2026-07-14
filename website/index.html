@@ -187,13 +187,17 @@
     </div>
   </div>
 
-  <!-- Download -->
-  <a href="#mac-install"
-     class="dl-btn scramble-hover flex items-center gap-2 h-9 sm:h-12 px-3.5 sm:px-6 bg-white rounded-full text-black text-[13px] sm:text-[16px] font-medium"
-     data-text="Download">
-    <i class="bi bi-apple"></i>
-    <span class="scramble-target">Download</span>
-  </a>
+  <!-- Downloads: Mac + Android -->
+  <div class="flex items-center gap-2">
+    <a href="downloads/Bifrost.app.zip" download
+       class="dl-btn flex items-center gap-2 h-9 sm:h-12 px-3 sm:px-5 bg-white rounded-full text-black text-[13px] sm:text-[15px] font-medium">
+      <i class="bi bi-apple"></i><span class="hidden sm:inline">Mac</span>
+    </a>
+    <a href="downloads/bifrost.apk" download
+       class="pill-hover flex items-center gap-2 h-9 sm:h-12 px-3 sm:px-5 bg-white/15 backdrop-blur-md rounded-full text-white text-[13px] sm:text-[15px] font-medium">
+      <i class="bi bi-android2"></i><span class="hidden sm:inline">Android</span>
+    </a>
+  </div>
 </nav>
 
 <!-- ══════════ SECTION 1: HERO ══════════ -->
@@ -517,17 +521,6 @@
       document.querySelectorAll('.scramble-in').forEach(scrambleIn);
     }, 800);
   });
-
-  // ───── Android visitors: navbar Download button gets the APK directly ─────
-  if (/Android/i.test(navigator.userAgent)) {
-    const navDl = document.querySelector('nav a[href="#mac-install"]');
-    if (navDl) {
-      navDl.setAttribute('href', 'downloads/bifrost.apk');
-      navDl.setAttribute('download', '');
-      const icon = navDl.querySelector('i.bi');
-      if (icon) icon.className = 'bi bi-android2';
-    }
-  }
 
   // ───── Terminal install command ─────
   // curl doesn't set the com.apple.quarantine attribute, so this path skips Gatekeeper entirely.
