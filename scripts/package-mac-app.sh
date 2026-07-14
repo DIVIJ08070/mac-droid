@@ -39,6 +39,9 @@ cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Sign with a stable self-signed identity so macOS keeps Screen Recording and
 # other permissions across rebuilds (ad-hoc signing changes identity each build,
 # which makes macOS forget the grant). Falls back to ad-hoc if the cert is absent.
+# Strip extended attributes/Finder metadata — codesign rejects them as "detritus".
+xattr -cr "$APP"
+
 SIGN_KC="$HOME/Library/Keychains/macdroid-signing.keychain-db"
 if security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "MacDroid Self-Signed"; then
   security unlock-keychain -p macdroid "$SIGN_KC" 2>/dev/null
