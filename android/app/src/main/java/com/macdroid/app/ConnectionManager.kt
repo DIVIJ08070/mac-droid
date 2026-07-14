@@ -104,6 +104,17 @@ object ConnectionManager {
         _mirrorNotifications.value =
             appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
                 .getBoolean("mirrorNotifications", false)
+        // A remembered Mac means the reconnect service should be running from the
+        // start — it owns discovery/USB-tunnel retries. Without this it only starts
+        // after the next successful pairing, so a fresh app launch never reconnects
+        // on its own.
+        if (hasRememberedMac()) {
+            try {
+                startBackgroundService()
+            } catch (e: Exception) {
+                android.util.Log.w("MacDroid", "Reconnect service start failed: ${e.message}")
+            }
+        }
         scope.launch {
             for (packet in inputChannel) {
                 try {
