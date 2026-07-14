@@ -1010,7 +1010,7 @@ object ConnectionManager {
             "ping" -> {
                 if (_state.value != ConnectionState.PAIRED) return
                 appendLog("Ping from Mac")
-                showNotification("MacDroid", packet.body.optString("message", "Ping from your Mac"), sound = true)
+                showNotification("Bifrost", packet.body.optString("message", "Ping from your Mac"), sound = true)
             }
 
             "file.offer" -> {
@@ -1261,7 +1261,7 @@ object ConnectionManager {
         val manager =
             appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "MacDroid", NotificationManager.IMPORTANCE_HIGH).apply {
+            NotificationChannel(CHANNEL_ID, "Bifrost", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Pings and events from your Mac"
             }
         )

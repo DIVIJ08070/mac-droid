@@ -27,10 +27,12 @@ else
 fi
 cd ..
 
-echo "→ assembling MacDroid.app"
-APP=build/MacDroid.app
-rm -rf "$APP"
+echo "→ assembling Bifrost.app"
+APP=build/Bifrost.app
+rm -rf "$APP" build/MacDroid.app
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# The executable inside stays "MacDroid" to match CFBundleExecutable; only the
+# bundle and display name are "Bifrost".
 cp "macos/$BIN" "$APP/Contents/MacOS/MacDroid"
 cp macos/Resources/Info.plist "$APP/Contents/Info.plist"
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
@@ -48,5 +50,6 @@ else
 fi
 
 mkdir -p website/downloads
-ditto -c -k --keepParent "$APP" website/downloads/MacDroid.app.zip
-echo "✓ website/downloads/MacDroid.app.zip"
+rm -f website/downloads/MacDroid.app.zip
+ditto -c -k --keepParent "$APP" website/downloads/Bifrost.app.zip
+echo "✓ website/downloads/Bifrost.app.zip"

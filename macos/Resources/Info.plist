@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>MacDroid</string>
+    <string>Bifrost</string>
     <key>CFBundleDisplayName</key>
-    <string>MacDroid</string>
+    <string>Bifrost</string>
     <key>CFBundleIdentifier</key>
     <string>com.macdroid.app</string>
     <key>CFBundleExecutable</key>
@@ -23,8 +23,8 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>MacDroid reads the current browser tab to sync it to your phone (tab sync).</string>
+    <string>Bifrost reads the current browser tab to sync it to your phone (tab sync).</string>
     <key>NSHumanReadableCopyright</key>
-    <string>MacDroid — connect your Mac and Android phone.</string>
+    <string>Bifrost — connect your Mac and Android phone.</string>
 </dict>
 </plist>

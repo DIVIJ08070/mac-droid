@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MacDroid — Connect your Mac and Android</title>
-<meta name="description" content="MacDroid links your Mac and Android phone over Wi-Fi: shared clipboard, file transfer, trackpad, audio streaming, tab handoff and more. Free, open, no cloud.">
+<title>Bifrost — Connect your Mac and Android</title>
+<meta name="description" content="Bifrost links your Mac and Android phone over Wi-Fi: shared clipboard, file transfer, trackpad, audio streaming, tab handoff and more. Free, open, no cloud.">
 <style>
   :root {
     --bg: #0b0b12;
@@ -121,11 +121,11 @@
     <p>Shared clipboard, file drops, a full trackpad, audio streaming, tab handoff and remote control —
        over your own Wi-Fi. No cloud, no account, no subscription.</p>
     <div class="dl-row">
-      <a class="btn btn-primary" href="downloads/MacDroid.app.zip" download>
+      <a class="btn btn-primary" href="downloads/Bifrost.app.zip" download>
         <span class="icon">💻</span>
         <span>Download for Mac<small>macOS 13+ · Intel &amp; Apple Silicon</small></span>
       </a>
-      <a class="btn btn-secondary" href="downloads/macdroid.apk" download>
+      <a class="btn btn-secondary" href="downloads/bifrost.apk" download>
         <span class="icon">🤖</span>
         <span>Download for Android<small>Android 10+ · APK</small></span>
       </a>
@@ -169,7 +169,7 @@
     <p class="sub">One-time setup, then it just works.</p>
     <div class="steps">
       <div class="step"><h3>Install on the Mac</h3>
-        <p>Download, unzip, move <strong>MacDroid.app</strong> to Applications and open it.
+        <p>Download, unzip, move <strong>Bifrost.app</strong> to Applications and open it.
            First launch: <strong>right-click → Open</strong> to pass Gatekeeper.</p></div>
       <div class="step"><h3>Install on the phone</h3>
         <p>Download the APK and tap it. Allow "install unknown apps" for your browser when Android asks — that's normal for apps outside the Play Store.</p></div>
@@ -184,20 +184,20 @@
     <h2>Questions</h2>
     <p class="sub">The honest fine print.</p>
     <details>
-      <summary>macOS says it "could not verify MacDroid is free of malware"</summary>
-      <p>MacDroid isn't notarized with Apple (that requires a paid developer account), so Gatekeeper warns on
+      <summary>macOS says it "could not verify Bifrost is free of malware"</summary>
+      <p>Bifrost isn't notarized with Apple (that requires a paid developer account), so Gatekeeper warns on
          first launch. On macOS 15 (Sequoia) and newer: click <strong>Done</strong> in the dialog, then open
          <strong>System Settings → Privacy &amp; Security</strong>, scroll to the bottom, and click
-         <strong>"Open Anyway"</strong> next to the MacDroid message. On macOS 13–14 you can instead
+         <strong>"Open Anyway"</strong> next to the Bifrost message. On macOS 13–14 you can instead
          right-click the app → <strong>Open</strong> → Open. Either way, it's a one-time step.</p>
       <p>To skip the warning entirely, install from Terminal instead (the copy-paste command is in the
          <a href="index.html#setup" style="color:var(--accent2)">setup guide</a>) — files fetched with
          <code>curl</code> aren't quarantined, so Gatekeeper never prompts. Already downloaded the zip?
-         Clear the flag with: <code>xattr&nbsp;-cr&nbsp;/Applications/MacDroid.app</code></p>
+         Clear the flag with: <code>xattr&nbsp;-cr&nbsp;/Applications/Bifrost.app</code></p>
     </details>
     <details>
       <summary>Google Play Protect says "App blocked to protect your device"</summary>
-      <p>MacDroid legitimately uses the microphone, screen capture and an accessibility service
+      <p>Bifrost legitimately uses the microphone, screen capture and an accessibility service
          (for mic streaming, screen sharing and tab sync) — and since it's sideloaded rather than
          from the Play Store, Google's scanner flags that combination. To install: tap
          <strong>More details → Install anyway</strong> if offered, or temporarily disable scanning in
@@ -220,11 +220,11 @@
     <details>
       <summary>How do I use the phone as a real microphone in Zoom?</summary>
       <p>Install the free virtual audio driver <a href="https://existential.audio/blackhole/" style="color:var(--accent2)">BlackHole</a>,
-         select it as the mic output device in MacDroid, then pick "BlackHole" as the microphone in Zoom.</p>
+         select it as the mic output device in Bifrost, then pick "BlackHole" as the microphone in Zoom.</p>
     </details>
     <details>
       <summary>Why does tab sync need an accessibility service?</summary>
-      <p>Android offers no official way for one app to read the browser's current address, so MacDroid uses an
+      <p>Android offers no official way for one app to read the browser's current address, so Bifrost uses an
          accessibility service that reads <em>only</em> the address bar of Chrome / Samsung Internet. Nothing else is read or stored.</p>
     </details>
   </section>
@@ -236,7 +236,7 @@
       <span class="badge">No tracking</span>
       <span class="badge">Open source</span>
     </div>
-    MacDroid — built for people whose laptop and phone refuse to talk to each other.
+    Bifrost — built for people whose laptop and phone refuse to talk to each other.
   </footer>
 </div>
 

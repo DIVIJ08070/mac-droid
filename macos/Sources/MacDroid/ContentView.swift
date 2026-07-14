@@ -170,7 +170,7 @@ struct ContentView: View {
                         .font(Theme.mono(24, .light))
                         .foregroundStyle(.white)
                 }
-                Text("Open MacDroid on your phone — same Wi-Fi.")
+                Text("Open Bifrost on your phone — same Wi-Fi.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
                 Text(server.statusText)

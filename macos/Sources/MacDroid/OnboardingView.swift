@@ -27,7 +27,7 @@ struct OnboardingView: View {
             label: "Step 1 — The phone",
             headingTop: "One app",
             headingBottom: "on each side.",
-            body: "Install MacDroid on your Android phone.\nThen make sure both devices are on the same Wi-Fi network. That's the whole setup.",
+            body: "Install Bifrost on your Android phone.\nThen make sure both devices are on the same Wi-Fi network. That's the whole setup.",
             icon: "wifi"
         ),
         Page(

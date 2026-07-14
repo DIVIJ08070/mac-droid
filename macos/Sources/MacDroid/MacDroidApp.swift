@@ -7,7 +7,7 @@ struct MacDroidApp: App {
     @StateObject private var server = ServerManager()
 
     var body: some Scene {
-        WindowGroup("MacDroid") {
+        WindowGroup("Bifrost") {
             ContentView()
                 .environmentObject(server)
                 .onAppear { server.start() }

@@ -199,7 +199,7 @@ private fun HomeHeader(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "MacDroid",
+                "Bifrost",
                 color = MdWhite,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Light,

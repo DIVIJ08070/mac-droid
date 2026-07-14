@@ -137,7 +137,7 @@ class ConnectionService : Service() {
         )
         return NotificationCompat.Builder(this, ConnectionManager.SERVICE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setContentTitle("MacDroid")
+            .setContentTitle("Bifrost")
             .setContentText(text)
             .setContentIntent(openApp)
             .setOngoing(true)

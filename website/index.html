@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MacDroid — Your Mac and Android. One Network.</title>
-<meta name="description" content="MacDroid links your Mac and Android over your own Wi-Fi: clipboard, files, trackpad, audio and tab handoff. No cloud. No account.">
+<title>Bifrost — Your Mac and Android. One Network.</title>
+<meta name="description" content="Bifrost links your Mac and Android over your own Wi-Fi: clipboard, files, trackpad, audio and tab handoff. No cloud. No account.">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -144,11 +144,14 @@
   <!-- Desktop -->
   <div class="hidden sm:flex items-center gap-2">
     <a href="#" class="pill-hover flex items-center gap-2.5 h-12 px-5 bg-white/15 backdrop-blur-md rounded-[14px]">
-      <svg width="18" height="18" viewBox="-50 -50 100 100" fill="white">
-        <g id="q"><path d="M 1.5,23 L 1.5,33 C 1.5,38.5 6,43 11.5,43 L 16.5,43 C 22,43 26.5,38.5 26.5,33 Q 28,28 33,26.5 C 38.5,26.5 43,22 43,16.5 L 43,11.5 C 43,6 38.5,1.5 33,1.5 L 23,1.5 Q 12,12 1.5,23 Z"/></g>
-        <use href="#q" transform="rotate(90)"/><use href="#q" transform="rotate(180)"/><use href="#q" transform="rotate(270)"/>
+      <svg width="20" height="20" viewBox="0 0 100 100">
+        <defs><linearGradient id="bfg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff6b6b"/><stop offset=".5" stop-color="#8ee88e"/><stop offset="1" stop-color="#9e8cff"/>
+        </linearGradient></defs>
+        <path d="M28,66 C36,30 64,30 72,66" fill="none" stroke="url(#bfg)" stroke-width="11" stroke-linecap="round"/>
+        <circle cx="28" cy="66" r="8" fill="#ff6b6b"/><circle cx="72" cy="66" r="8" fill="#9e8cff"/>
       </svg>
-      <span class="text-[16px] font-medium tracking-tight text-white">MacDroid</span>
+      <span class="text-[16px] font-medium tracking-tight text-white">Bifrost</span>
     </a>
     <div id="menuPill" class="menu-pill flex items-center h-12 bg-white/15 backdrop-blur-md rounded-[14px]">
       <button class="burger-btn flex items-center justify-center" onclick="toggleMenu()" aria-label="Menu">
@@ -164,10 +167,14 @@
   <!-- Mobile -->
   <div class="flex sm:hidden items-center gap-2 flex-1 mr-2">
     <a href="#" id="mLogoPill" class="m-logo-pill flex items-center gap-2 h-9 px-3.5 bg-white/15 backdrop-blur-md rounded-[10px]">
-      <svg width="14" height="14" viewBox="-50 -50 100 100" fill="white">
-        <use href="#q"/><use href="#q" transform="rotate(90)"/><use href="#q" transform="rotate(180)"/><use href="#q" transform="rotate(270)"/>
+      <svg width="16" height="16" viewBox="0 0 100 100">
+        <defs><linearGradient id="bfg2" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff6b6b"/><stop offset=".5" stop-color="#8ee88e"/><stop offset="1" stop-color="#9e8cff"/>
+        </linearGradient></defs>
+        <path d="M28,66 C36,30 64,30 72,66" fill="none" stroke="url(#bfg2)" stroke-width="11" stroke-linecap="round"/>
+        <circle cx="28" cy="66" r="8" fill="#ff6b6b"/><circle cx="72" cy="66" r="8" fill="#9e8cff"/>
       </svg>
-      <span class="text-[13px] font-medium tracking-tight text-white whitespace-nowrap">MacDroid</span>
+      <span class="text-[13px] font-medium tracking-tight text-white whitespace-nowrap">Bifrost</span>
     </a>
     <div id="mMenuPill" class="m-menu-pill flex items-center h-9 bg-white/15 backdrop-blur-md rounded-[10px]">
       <button class="w-9 h-9 flex items-center justify-center flex-none" onclick="toggleMenu()" aria-label="Menu">
@@ -207,7 +214,7 @@
           <span class="scramble-in" data-text="And Android" data-delay="500">&nbsp;</span>
         </h1>
         <p class="fade-up-hero max-w-sm text-[13px] sm:text-[15px] text-white/60 leading-relaxed">
-          Built for the gap between macOS and Android. MacDroid continuously carries your clipboard,
+          Built for the gap between macOS and Android. Bifrost continuously carries your clipboard,
           files, audio and input across both devices as a single adaptive connection layer — on your own Wi-Fi.
         </p>
       </div>
@@ -226,7 +233,7 @@
   <div class="absolute top-0 left-0 right-0 h-[180px] z-10 pointer-events-none" style="background: linear-gradient(to bottom, #010103, transparent)"></div>
   <div class="persp relative z-10 h-full flex items-center justify-center">
     <p id="cineText" class="max-w-5xl font-sans font-normal text-[22px] sm:text-[30px] md:text-[36px] lg:text-[42px] text-white leading-[1.35] tracking-[-0.02em] select-none px-6 sm:px-12 text-center">
-      A connection layer built on your own local network. MacDroid turns two separate devices into one
+      A connection layer built on your own local network. Bifrost turns two separate devices into one
       continuous machine. Every copy becomes a shared clipboard. Every file arrives before you look up.
       Every gesture on glass moves a cursor on the desk. No cloud. No account. No wires.
     </p>
@@ -367,8 +374,8 @@
             <button onclick="copyInstallCmd(this)" class="pill-hover flex-none text-white/60 hover:text-white text-[12px] px-2.5 py-1 bg-white/10 rounded-lg" aria-label="Copy command">copy</button>
           </div>
           <p class="text-white/40 text-[13px] sm:text-[15px] leading-relaxed">
-            Prefer a normal download? <a href="downloads/MacDroid.app.zip" download class="text-white/70 underline underline-offset-4 hover:text-white">Get the zip here</a> —
-            unzip, move MacDroid.app to Applications, open it once — macOS
+            Prefer a normal download? <a href="downloads/Bifrost.app.zip" download class="text-white/70 underline underline-offset-4 hover:text-white">Get the zip here</a> —
+            unzip, move Bifrost.app to Applications, open it once — macOS
             will say it "could not verify" the app (it isn't Apple-notarized). Click Done, then go to
             System Settings → Privacy &amp; Security, scroll down, and click "Open Anyway".
             One time only.
@@ -384,7 +391,7 @@
             for anything outside the Play Store. If Play Protect says "app blocked": tap More
             details → Install anyway, or briefly toggle off scanning in Play Store → profile →
             Play Protect → settings, install, then toggle it back on. It triggers because
-            MacDroid uses mic/screen/accessibility for its features and isn't on the Play Store.
+            Bifrost uses mic/screen/accessibility for its features and isn't on the Play Store.
           </p>
         </div>
       </div>
@@ -426,7 +433,7 @@
 
   <div class="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-32 text-center">
     <h2 data-inview class="text-white font-light text-[clamp(40px,9vw,90px)] leading-[0.95] tracking-[-0.03em] mb-8">
-      Get MacDroid.
+      Get Bifrost.
     </h2>
     <p data-inview style="--d:150ms" class="text-white/50 text-[13px] sm:text-[15px] max-w-md leading-relaxed mb-12">
       Free &amp; open. macOS 13+ (Intel &amp; Apple Silicon) · Android 10+.
@@ -437,7 +444,7 @@
          class="dl-btn flex items-center gap-2.5 h-12 px-7 bg-white rounded-full text-black text-[15px] font-medium">
         <i class="bi bi-apple"></i> Download for Mac
       </a>
-      <a href="downloads/macdroid.apk" download
+      <a href="downloads/bifrost.apk" download
          class="pill-hover flex items-center gap-2.5 h-12 px-7 bg-white/15 backdrop-blur-md rounded-full text-white text-[15px]">
         Download for Android
       </a>
@@ -445,7 +452,7 @@
   </div>
 
   <div class="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 sm:px-8 pb-8 text-[12px] text-white/40">
-    <span>MacDroid — one desk, one network.</span>
+    <span>Bifrost — one desk, one network.</span>
     <div class="flex gap-6">
       <a href="info.html#features" class="hover:text-white transition-colors">Features</a>
       <a href="info.html#setup" class="hover:text-white transition-colors">Docs</a>
@@ -515,7 +522,7 @@
   if (/Android/i.test(navigator.userAgent)) {
     const navDl = document.querySelector('nav a[href="#mac-install"]');
     if (navDl) {
-      navDl.setAttribute('href', 'downloads/macdroid.apk');
+      navDl.setAttribute('href', 'downloads/bifrost.apk');
       navDl.setAttribute('download', '');
       const icon = navDl.querySelector('i.bi');
       if (icon) icon.className = 'bi bi-android2';
@@ -525,9 +532,9 @@
   // ───── Terminal install command ─────
   // curl doesn't set the com.apple.quarantine attribute, so this path skips Gatekeeper entirely.
   const zipUrl = location.protocol === 'file:'
-    ? 'https://YOUR-DOMAIN/downloads/MacDroid.app.zip'
-    : new URL('downloads/MacDroid.app.zip', location.href).href;
-  const installCmd = `curl -L ${zipUrl} -o /tmp/MacDroid.zip && ditto -xk /tmp/MacDroid.zip /Applications && rm /tmp/MacDroid.zip && open /Applications/MacDroid.app`;
+    ? 'https://YOUR-DOMAIN/downloads/Bifrost.app.zip'
+    : new URL('downloads/Bifrost.app.zip', location.href).href;
+  const installCmd = `curl -L ${zipUrl} -o /tmp/Bifrost.zip && ditto -xk /tmp/Bifrost.zip /Applications && rm /tmp/Bifrost.zip && open /Applications/Bifrost.app`;
   document.getElementById('installCmd').textContent = installCmd;
   function copyInstallCmd(btn) {
     navigator.clipboard.writeText(installCmd).then(() => {
