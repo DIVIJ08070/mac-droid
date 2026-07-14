@@ -1,14 +1,17 @@
-# MacDroid
+# Bifrost
 
 Connect your Mac and your Samsung (Android) phone over your local Wi-Fi — your own
 mini KDE Connect. Two apps, one protocol (see [PROTOCOL.md](PROTOCOL.md)).
+
+> Formerly "MacDroid" — internal identifiers (bundle executable, `com.macdroid.app`,
+> `_macdroid._tcp`) keep the old name so upgrades and pairing stay compatible.
 
 **Features**
 - Automatic discovery: the phone finds the Mac on the same Wi-Fi (Bonjour/mDNS)
 - Pairing with a 6-digit confirmation code — **once**; reconnects are silent (remembered token)
 - Clipboard sync: Mac → phone automatically (toggleable), phone → Mac with one tap
 - File & photo transfer:
-  - Phone → Mac: share sheet from any app ("Share → MacDroid") or the in-app picker; lands in the Mac's Downloads
+  - Phone → Mac: share sheet from any app ("Share → Bifrost") or the in-app picker; lands in the Mac's Downloads
   - Mac → phone: "Send file…" button or drag & drop onto the window; lands in the phone's Downloads
 - Stays connected in the background: an Android foreground service keeps the link alive
   and auto-reconnects whenever it sees your Mac on the network
@@ -52,7 +55,7 @@ information → tap **Build number** 7 times, then Settings → Developer option
 
 ## Use it
 
-1. Start the Mac app, open MacDroid on the phone (same Wi-Fi network).
+1. Start the Mac app, open Bifrost on the phone (same Wi-Fi network).
 2. The Mac appears in the list on the phone → tap **Connect**.
 3. A 6-digit code shows on both screens → click **Accept** on the Mac.
 4. Copy something on the Mac — it lands on the phone's clipboard automatically.
@@ -68,7 +71,7 @@ android/      — Kotlin + Jetpack Compose app (NsdManager discovery, TCP client
 
 ## Roadmap
 
-- [ ] TLS with pinned certificates (traffic is currently plaintext on your LAN)
-- [ ] Notification mirroring (Android → Mac)
+- [x] Encrypted control channel (ECDH P-256 key exchange + AES-256-GCM per packet)
+- [x] Notification mirroring (Android → Mac)
 - [ ] Battery status on the Mac + full-volume find-my-phone
 - [ ] SMS from the Mac
