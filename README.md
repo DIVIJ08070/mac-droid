@@ -1,7 +1,8 @@
 # Bifrost
 
-Connect your Mac and your Samsung (Android) phone over your local Wi-Fi — your own
-mini KDE Connect. Two apps, one protocol (see [PROTOCOL.md](PROTOCOL.md)).
+Connect your Mac and your Samsung (Android) phone — over the same Wi-Fi, the phone's
+hotspot, a USB cable, or Tailscale from anywhere. Your own mini KDE Connect.
+Two apps, one protocol (see [PROTOCOL.md](PROTOCOL.md)).
 
 > Formerly "MacDroid" — internal identifiers (bundle executable, `com.macdroid.app`,
 > `_macdroid._tcp`) keep the old name so upgrades and pairing stay compatible.

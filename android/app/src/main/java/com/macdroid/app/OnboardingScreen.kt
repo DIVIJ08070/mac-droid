@@ -59,8 +59,8 @@ private val pages = listOf(
         kicker = "01 · WELCOME",
         title = "Your Mac,\nin your pocket.",
         body = "Clipboard, files, audio and remote control between this phone " +
-            "and your Mac — over your own Wi-Fi.\n\n" +
-            "No cloud. No account. No wires.",
+            "and your Mac — over Wi-Fi, hotspot, USB or Tailscale.\n\n" +
+            "No cloud. No account.",
     ),
     OnboardPage(
         kicker = "02 · SETUP",
@@ -72,7 +72,8 @@ private val pages = listOf(
     OnboardPage(
         kicker = "03 · PAIRING",
         title = "Pair once,\nconnect forever.",
-        body = "Your Mac appears in the list — tap Connect.\n\n" +
+        body = "Your Mac appears in the list — tap Connect. Any connection works: " +
+            "same Wi-Fi, this phone's hotspot, a USB cable, or Tailscale.\n\n" +
             "Check the 6-digit code matches on both screens, then hit Accept " +
             "on the Mac. You only do this once.",
     ),

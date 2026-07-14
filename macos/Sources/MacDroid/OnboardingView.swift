@@ -20,7 +20,7 @@ struct OnboardingView: View {
             label: "Welcome",
             headingTop: "Your Mac.",
             headingBottom: "And Android.",
-            body: "Clipboard, files, audio and remote input between your Mac and your phone — over your own Wi-Fi.\nNo cloud. No account. No wires.",
+            body: "Clipboard, files, audio and remote input between your Mac and your phone — over Wi-Fi, hotspot, USB or Tailscale.\nNo cloud. No account.",
             icon: "laptopcomputer.and.iphone"
         ),
         Page(

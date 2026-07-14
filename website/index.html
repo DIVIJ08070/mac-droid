@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bifrost — Your Mac and Android. One Network.</title>
-<meta name="description" content="Bifrost links your Mac and Android over your own Wi-Fi: clipboard, files, trackpad, audio and tab handoff. No cloud. No account.">
+<meta name="description" content="Bifrost links your Mac and Android over Wi-Fi, hotspot, USB or the internet: clipboard, files, trackpad, audio and tab handoff. No cloud. No account.">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -256,7 +256,7 @@
         </h1>
         <p class="fade-up-hero max-w-sm text-[13px] sm:text-[15px] text-white/60 leading-relaxed">
           Built for the gap between macOS and Android. Bifrost continuously carries your clipboard,
-          files, audio and input across both devices as a single adaptive connection layer — on your own Wi-Fi.
+          files, audio and input across both devices as a single adaptive connection layer — Wi-Fi, hotspot, USB or remote.
         </p>
       </div>
       <h1 class="text-white font-light leading-[0.95] tracking-[-0.03em] text-[clamp(40px,8vw,100px)] text-left md:text-right">
@@ -281,15 +281,26 @@
     </h2>
     <p data-inview style="--d:140ms" class="text-white/70 text-[15px] sm:text-[18px] max-w-2xl leading-relaxed mb-14">
       Free, private, and no cloud. Bifrost carries your clipboard, files, screen, audio and
-      input between the two — on your Wi-Fi, or across the world.
+      input between the two — over Wi-Fi, hotspot, USB, or across the world.
     </p>
 
-    <div class="grid md:grid-cols-3 gap-4">
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
       <div data-inview style="--d:0ms" class="why-card">
+        <div class="ico">🔗</div>
+        <h3>Connect four ways</h3>
+        <p>Whatever you have, Bifrost links up:</p>
+        <div class="flex flex-wrap gap-1.5 mt-3">
+          <span class="text-[11px] text-white/80 bg-white/10 border border-white/15 rounded-full px-2.5 py-1">📶 Same Wi-Fi</span>
+          <span class="text-[11px] text-white/80 bg-white/10 border border-white/15 rounded-full px-2.5 py-1">🔥 Phone hotspot</span>
+          <span class="text-[11px] text-white/80 bg-white/10 border border-white/15 rounded-full px-2.5 py-1">🔌 USB cable</span>
+          <span class="text-[11px] text-white/80 bg-white/10 border border-white/15 rounded-full px-2.5 py-1">🌍 Tailscale remote</span>
+        </div>
+      </div>
+      <div data-inview style="--d:60ms" class="why-card">
         <div class="ico">🌍</div>
         <h3>Works anywhere</h3>
-        <p>Same Wi-Fi, your phone's hotspot, a USB cable <em>or</em> across the internet.
-           Reach your Mac from cellular, a café, another city — encrypted end-to-end, no cloud in the middle.</p>
+        <p>No Wi-Fi around? Use the phone's hotspot or a cable. Far away? Reach your Mac from
+           cellular, a café, another city — encrypted end-to-end, no cloud in the middle.</p>
       </div>
       <div data-inview style="--d:80ms" class="why-card">
         <div class="ico">🖥️</div>

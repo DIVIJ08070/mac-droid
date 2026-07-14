@@ -148,7 +148,7 @@ struct ContentView: View {
                         .font(Theme.mono(24, .light))
                         .foregroundStyle(.white)
                 }
-                Text("Clipboard, files, audio and input — live over your Wi-Fi.")
+                Text("Clipboard, files, audio and input — live over your private link.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
                     .lineSpacing(4)
