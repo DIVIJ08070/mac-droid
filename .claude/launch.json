@@ -14,16 +14,15 @@
       "port": 8123
     },
     {
-      "name": "whatsapp-demo",
-      "runtimeExecutable": "python3",
+      "name": "whatsapp-demo-next",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8199",
-        "--directory",
+        "run",
+        "dev",
+        "--prefix",
         "/Users/mac/Desktop/demo"
       ],
-      "port": 8199
+      "port": 3050
     }
   ]
 }
