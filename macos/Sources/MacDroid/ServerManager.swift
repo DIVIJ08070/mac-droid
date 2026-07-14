@@ -436,6 +436,52 @@ final class ServerManager: ObservableObject {
         appendLog("Asked phone to share its screen — accept on the phone")
     }
 
+    /// Desktop Mode: open a phone-powered Android desktop in its own window via
+    /// scrcpy's virtual display. Needs scrcpy + the phone reachable over ADB
+    /// (Developer options → Wireless debugging). Runs an external process.
+    func launchDesktopMode() {
+        let scrcpyPath = ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let scrcpyPath else {
+            appendLog("Desktop Mode needs scrcpy — open Terminal and run: brew install scrcpy")
+            return
+        }
+        let adbPath = NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: scrcpyPath)
+        process.arguments = [
+            "--new-display=1600x900/300",
+            "--stay-awake", "--no-audio",
+            "--window-title=Bifrost Desktop",
+        ]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:" + (env["PATH"] ?? "")
+        if FileManager.default.isExecutableFile(atPath: adbPath) { env["ADB"] = adbPath }
+        process.environment = env
+
+        let stderr = Pipe()
+        process.standardError = stderr
+        process.terminationHandler = { [weak self] proc in
+            if proc.terminationStatus != 0 {
+                let output = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                Task { @MainActor in
+                    if output.localizedCaseInsensitiveContains("no devices") || output.localizedCaseInsensitiveContains("device") {
+                        self?.appendLog("Desktop Mode: no phone over ADB — turn on Wireless debugging (Developer options) and connect it")
+                    } else {
+                        self?.appendLog("Desktop Mode exited")
+                    }
+                }
+            }
+        }
+        do {
+            try process.run()
+            appendLog("Launching Desktop Mode… a phone-powered desktop window will open")
+        } catch {
+            appendLog("Desktop Mode failed to start: \(error.localizedDescription)")
+        }
+    }
+
     func startMirrorToPhone() {
         guard isPaired, macScreenSender == nil else { return }
         let sender = MacScreenSender()

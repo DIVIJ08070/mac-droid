@@ -319,6 +319,7 @@ struct ContentView: View {
                 Button("Browse phone files") { server.browsePhoneFiles() }
                 Button("Browse phone gallery") { server.browsePhoneGallery() }
                 Button("Pull photos from phone…") { server.pullPhotosFromPhone() }
+                Button("Desktop Mode (beta)") { server.launchDesktopMode() }
                 Button("Ping phone") { server.pingPhone() }
             }
             if server.fileBrowsing {
