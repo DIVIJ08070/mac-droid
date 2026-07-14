@@ -614,7 +614,7 @@ final class ServerManager: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if ok {
-                    self.appendLog("USB link ready ✓ — on the phone: Bifrost → Connect by address → 127.0.0.1:\(Self.fixedPort)")
+                    self.appendLog("USB link ready ✓ — an already-paired phone connects by itself within ~10s. First time? On the phone: Connect by address → 127.0.0.1:\(Self.fixedPort)")
                 } else {
                     self.appendLog("USB link: no phone over ADB. Plug in the cable, enable USB debugging (Settings → Developer options), then try again.")
                 }

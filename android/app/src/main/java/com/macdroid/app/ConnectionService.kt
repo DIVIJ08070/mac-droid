@@ -110,23 +110,42 @@ class ConnectionService : Service() {
             if (ConnectionManager.state.value == ConnectionState.DISCONNECTED &&
                 rememberedName != null && ConnectionManager.hasRememberedMac()
             ) {
-                val discovery = DiscoveryManager(this)
-                try {
-                    discovery.start()
-                    val target = withTimeoutOrNull(10_000) {
-                        discovery.macs
-                            .first { list -> list.any { it.name == rememberedName } }
-                            .first { it.name == rememberedName }
+                // USB link first: when the Mac has an adb reverse tunnel up, it is one
+                // localhost hop away — instant, and works with no network at all.
+                if (usbTunnelPresent()) {
+                    ConnectionManager.connect(
+                        DiscoveredMac(rememberedName, "127.0.0.1", ConnectionManager.DEFAULT_PORT)
+                    )
+                } else {
+                    val discovery = DiscoveryManager(this)
+                    try {
+                        discovery.start()
+                        val target = withTimeoutOrNull(10_000) {
+                            discovery.macs
+                                .first { list -> list.any { it.name == rememberedName } }
+                                .first { it.name == rememberedName }
+                        }
+                        if (target != null && ConnectionManager.state.value == ConnectionState.DISCONNECTED) {
+                            ConnectionManager.connect(target)
+                        }
+                    } finally {
+                        discovery.stop()
                     }
-                    if (target != null && ConnectionManager.state.value == ConnectionState.DISCONNECTED) {
-                        ConnectionManager.connect(target)
-                    }
-                } finally {
-                    discovery.stop()
                 }
             }
             delay(8_000)
         }
+    }
+
+    /** Something is listening on the phone's own localhost port — that's the Mac
+     *  behind an adb reverse tunnel (refused instantly when there's no tunnel). */
+    private fun usbTunnelPresent(): Boolean = try {
+        java.net.Socket().use { probe ->
+            probe.connect(java.net.InetSocketAddress("127.0.0.1", ConnectionManager.DEFAULT_PORT), 400)
+            true
+        }
+    } catch (_: Exception) {
+        false
     }
 
     private fun buildNotification(text: String): Notification {
