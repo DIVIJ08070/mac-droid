@@ -210,7 +210,18 @@
     </details>
     <details>
       <summary>Does it work away from home?</summary>
-      <p>Both devices need to be on the same Wi-Fi network. Internet/relay support is on the roadmap.</p>
+      <p>By default both devices are on the same Wi-Fi. For remote access, use the optional
+         <strong>Connect by address</strong> option (bottom of the phone's connect screen) together with
+         <a href="https://tailscale.com/download" style="color:var(--accent2)">Tailscale</a> — a free mesh VPN:</p>
+      <p style="margin-top:8px">
+         1. Install Tailscale on your Mac and phone, sign in with the same account on both.<br>
+         2. In the Mac's Tailscale app, copy this Mac's IP (looks like <code>100.x.y.z</code>).<br>
+         3. On the phone, open <strong>Connect by address</strong>, type that IP, tap Connect
+            (first time asks for a pairing code, just like at home).<br>
+      </p>
+      <p style="margin-top:8px">It's fully optional and doesn't change your home-Wi-Fi setup — it's just an extra way in.
+         Everything works remotely, encrypted end-to-end. Desktop Mode also works remotely but, as always,
+         needs Wireless debugging on the phone.</p>
     </details>
     <details>
       <summary>Is my data safe?</summary>

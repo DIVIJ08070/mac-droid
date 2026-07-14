@@ -315,12 +315,103 @@ private fun DiscoveryPane() {
                                 fontSize = 14.sp,
                             )
                             Text(
-                                "Is MacDroid open on your Mac?\nSame Wi-Fi network?",
+                                "Is Bifrost open on your Mac?\nSame Wi-Fi network?",
                                 color = MdWhite40,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,
                                 lineHeight = 18.sp,
                             )
+                        }
+                    }
+                }
+            }
+            // Optional, always last: connect away from home by address (e.g. Tailscale).
+            item { RemoteConnectCard() }
+        }
+    }
+}
+
+@Composable
+private fun RemoteConnectCard() {
+    val context = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf(ConnectionManager.savedManualAddress() ?: "") }
+    var showGuide by remember { mutableStateOf(false) }
+
+    Entrance(3) {
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionLabel("Away from home  ·  optional")
+            DarkCard(onClick = { expanded = !expanded }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Connect by address",
+                            color = MdWhite,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 15.sp,
+                        )
+                        Text(
+                            "Reach your Mac over the internet (Tailscale)",
+                            color = MdWhite40,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Text(
+                        if (expanded) "▲" else "▼",
+                        color = MdWhite40,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+
+            if (expanded) {
+                DarkCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = address,
+                            onValueChange = { address = it },
+                            placeholder = {
+                                Text(
+                                    "100.x.y.z  (your Mac's Tailscale IP)",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                )
+                            },
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = MdWhite, fontFamily = FontFamily.Monospace, fontSize = 14.sp
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PrimaryPill("Connect") {
+                                if (address.isNotBlank()) ConnectionManager.connectManual(address)
+                            }
+                            GhostPill(if (showGuide) "Hide setup" else "Setup guide") {
+                                showGuide = !showGuide
+                            }
+                        }
+                        if (showGuide) {
+                            Text(
+                                "One-time setup (free):\n\n" +
+                                    "1  Install “Tailscale” on this phone and on your Mac (App Store / Play Store).\n" +
+                                    "2  Sign in with the same account on both (Google/GitHub/email).\n" +
+                                    "3  On the Mac, open Tailscale → copy this Mac's IP (looks like 100.x.y.z).\n" +
+                                    "4  Type that IP above and tap Connect. First time asks for a pairing code, like at home.\n\n" +
+                                    "Works from anywhere, encrypted. Your home Wi-Fi setup is unaffected — this is just an extra way in.",
+                                color = MdWhite60,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                lineHeight = 19.sp,
+                            )
+                            GhostPill("Get Tailscale") {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://tailscale.com/download"))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
                         }
                     }
                 }

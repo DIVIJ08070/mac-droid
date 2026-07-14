@@ -244,6 +244,33 @@ object ConnectionManager {
 
     fun rememberedMacName(): String? = prefs.getString("pairedMacName", null)
 
+    // MARK: optional connect-by-address (e.g. a Tailscale IP, for use away from home)
+
+    const val DEFAULT_PORT = 52377
+
+    fun savedManualAddress(): String? = prefs.getString("manualAddress", null)
+
+    fun forgetManualAddress() = prefs.edit().remove("manualAddress").apply()
+
+    /** Connect to "host" or "host:port" directly — additive; LAN discovery is untouched. */
+    fun connectManual(addressInput: String) {
+        val input = addressInput.trim()
+        if (input.isEmpty()) return
+        val host: String
+        val port: Int
+        val colon = input.lastIndexOf(':')
+        if (colon > 0 && input.substring(colon + 1).toIntOrNull() != null) {
+            host = input.substring(0, colon)
+            port = input.substring(colon + 1).toInt()
+        } else {
+            host = input
+            port = DEFAULT_PORT
+        }
+        prefs.edit().putString("manualAddress", input).apply()
+        appendLog("Connecting by address: $host:$port")
+        connect(DiscoveredMac(host, host, port))
+    }
+
     fun hasRememberedMac(): Boolean = rememberedMacName() != null && prefs.getString("pairToken", null) != null
 
     fun forgetMac() {
@@ -345,7 +372,9 @@ object ConnectionManager {
 
     private fun sendPairRequest(mac: DiscoveredMac) {
         val token = prefs.getString("pairToken", null)
-        if (token != null && rememberedMacName() == mac.name) {
+        // Try the stored token whenever we have one — works for LAN discovery AND
+        // connect-by-address (where the "name" is an IP that won't match the saved one).
+        if (token != null) {
             usedTokenForPairing = true
             _state.value = ConnectionState.PAIRING
             send(Packet("pair.request", JSONObject().put("token", token)))

@@ -72,6 +72,8 @@ final class ServerManager: ObservableObject {
     private var crypto = CryptoBox()
     private var handshakeDone = false
 
+    static let fixedPort: UInt16 = 52377
+
     private var deviceName: String {
         Host.current().localizedName ?? "Mac"
     }
@@ -119,7 +121,15 @@ final class ServerManager: ObservableObject {
         clipboard.start()
 
         do {
-            let listener = try NWListener(using: .tcp)
+            // Bind a fixed port so connect-by-address (e.g. Tailscale) has a known
+            // target. Fall back to a system-assigned port if it's taken.
+            let listener: NWListener
+            if let fixed = NWEndpoint.Port(rawValue: Self.fixedPort),
+               let bound = try? NWListener(using: .tcp, on: fixed) {
+                listener = bound
+            } else {
+                listener = try NWListener(using: .tcp)
+            }
             listener.service = NWListener.Service(name: deviceName, type: "_macdroid._tcp")
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
