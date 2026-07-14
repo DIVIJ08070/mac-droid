@@ -211,6 +211,7 @@ struct ContentView: View {
 
     private var featureGrid: some View {
         VStack(spacing: 12) {
+            desktopModeCard
             HStack(alignment: .top, spacing: 12) {
                 clipboardCard
                 filesCard
@@ -219,7 +220,6 @@ struct ContentView: View {
                 audioCard
                 remoteCard
             }
-            desktopModeCard
         }
     }
 
@@ -272,11 +272,17 @@ struct ContentView: View {
                 server.launchDesktopMode()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.up.forward.app")
-                    Text("Open Desktop")
+                    if server.desktopStarting {
+                        ProgressView().controlSize(.small).tint(.black)
+                        Text("Connecting…")
+                    } else {
+                        Image(systemName: "arrow.up.forward.app")
+                        Text("Open Desktop")
+                    }
                 }
             }
             .buttonStyle(GradientButtonStyle(gradient: bifrost))
+            .disabled(server.desktopStarting)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)

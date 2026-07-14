@@ -436,47 +436,95 @@ final class ServerManager: ObservableObject {
         appendLog("Asked phone to share its screen — accept on the phone")
     }
 
-    /// Desktop Mode: open a phone-powered Android desktop in its own window via
-    /// scrcpy's virtual display. Needs scrcpy + the phone reachable over ADB
-    /// (Developer options → Wireless debugging). Runs an external process.
-    func launchDesktopMode() {
-        let scrcpyPath = ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"]
+    @Published var desktopStarting = false
+
+    private static let adbPath = NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
+    private static var scrcpyPath: String? {
+        ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let scrcpyPath else {
+    }
+
+    /// Desktop Mode: open a phone-powered Android desktop in its own window via
+    /// scrcpy's virtual display. Auto-reconnects ADB first (so it works even if
+    /// the wireless-debug link dropped), then launches scrcpy.
+    func launchDesktopMode() {
+        guard !desktopStarting else { return }
+        guard let scrcpy = Self.scrcpyPath else {
             appendLog("Desktop Mode needs scrcpy — open Terminal and run: brew install scrcpy")
             return
         }
-        let adbPath = NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
+        desktopStarting = true
+        appendLog("Desktop Mode: connecting to the phone over ADB…")
 
+        Task.detached { [weak self] in
+            let ok = Self.ensureAdbDevice()
+            await MainActor.run {
+                guard let self else { return }
+                self.desktopStarting = false
+                guard ok else {
+                    self.appendLog("Desktop Mode: no phone over ADB. Turn on Settings → Developer options → Wireless debugging, then try again.")
+                    return
+                }
+                self.spawnScrcpy(scrcpy)
+            }
+        }
+    }
+
+    /// Ensure an ADB device is present; if not, restart the server and try to
+    /// (re)connect to a wireless-debug endpoint that mDNS is advertising.
+    private nonisolated static func ensureAdbDevice() -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: adbPath) else { return false }
+        func hasDevice() -> Bool {
+            let out = runADB(["devices"]) ?? ""
+            return out.split(separator: "\n").dropFirst().contains { $0.hasSuffix("\tdevice") }
+        }
+        if hasDevice() { return true }
+        _ = runADB(["reconnect", "offline"])
+        _ = runADB(["kill-server"])
+        _ = runADB(["start-server"])
+        for _ in 0..<8 {
+            if hasDevice() { return true }
+            if let services = runADB(["mdns", "services"]),
+               let line = services.split(separator: "\n").first(where: { $0.contains("_adb-tls-connect") }),
+               let endpoint = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).last {
+                _ = runADB(["connect", String(endpoint)])
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return hasDevice()
+    }
+
+    private nonisolated static func runADB(_ args: [String]) -> String? {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: scrcpyPath)
+        process.executableURL = URL(fileURLWithPath: adbPath)
+        process.arguments = args
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do { try process.run() } catch { return nil }
+        process.waitUntilExit()
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+    }
+
+    private func spawnScrcpy(_ scrcpy: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: scrcpy)
         process.arguments = [
-            "--new-display=1600x900/160",
-            "--stay-awake", "--no-audio",
+            "--new-display=1600x900/160", "--stay-awake", "--no-audio",
             "--window-title=Bifrost Desktop",
         ]
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:" + (env["PATH"] ?? "")
-        if FileManager.default.isExecutableFile(atPath: adbPath) { env["ADB"] = adbPath }
+        env["ADB"] = Self.adbPath
         process.environment = env
-
-        let stderr = Pipe()
-        process.standardError = stderr
         process.terminationHandler = { [weak self] proc in
             if proc.terminationStatus != 0 {
-                let output = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                Task { @MainActor in
-                    if output.localizedCaseInsensitiveContains("no devices") || output.localizedCaseInsensitiveContains("device") {
-                        self?.appendLog("Desktop Mode: no phone over ADB — turn on Wireless debugging (Developer options) and connect it")
-                    } else {
-                        self?.appendLog("Desktop Mode exited")
-                    }
-                }
+                Task { @MainActor in self?.appendLog("Desktop Mode window closed") }
             }
         }
         do {
             try process.run()
-            appendLog("Launching Desktop Mode… a phone-powered desktop window will open")
+            appendLog("Desktop Mode open — launch apps in the new window")
         } catch {
             appendLog("Desktop Mode failed to start: \(error.localizedDescription)")
         }
