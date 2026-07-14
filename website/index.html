@@ -134,6 +134,37 @@
   .dl-btn { transition: transform .2s ease, background-color .2s ease; }
   .dl-btn:hover { transform: scale(1.03); background: #e2e2e6; }
   .dl-btn:active { transform: scale(0.97); }
+
+  /* ── Backdrops for the black sections ───────────────────────────── */
+  /* Giant Anton watermark, like the hero's MACDROID but section-sized. */
+  .wm {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; overflow: hidden;
+    font-family: "Anton SC", sans-serif;
+    text-transform: uppercase; letter-spacing: -2px; white-space: nowrap;
+    font-size: clamp(90px, 17vw, 300px); line-height: 1;
+    opacity: 0.05;
+    background: radial-gradient(circle, rgba(142,127,148,0) 0%, #8E7F94 70%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  /* Slow drifting aurora blob. */
+  .blob {
+    position: absolute; border-radius: 50%;
+    filter: blur(90px); opacity: 0.13; pointer-events: none;
+    animation: blobFloat 22s ease-in-out infinite alternate;
+  }
+  @keyframes blobFloat {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(60px, -40px) scale(1.18); }
+  }
+  /* Faint horizontal scanlines — a "display" texture for Desktop Mode. */
+  .scanlines {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
+    background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 5px);
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, black, transparent);
+    mask-image: radial-gradient(70% 60% at 50% 40%, black, transparent);
+  }
 </style>
 </head>
 <body>
@@ -350,8 +381,12 @@
 </section>
 
 <!-- ══════════ SECTION 4B: EVERYTHING IT DOES (pure black) ══════════ -->
-<section id="features" class="relative bg-black py-28 sm:py-36">
-  <div class="max-w-6xl mx-auto px-6 sm:px-10">
+<section id="features" class="relative bg-black py-28 sm:py-36 overflow-hidden">
+  <div class="dot-grid absolute inset-0 pointer-events-none"></div>
+  <div class="wm">Everything</div>
+  <div class="blob" style="width:520px;height:520px;top:-140px;right:-120px;background:#7d6bff"></div>
+  <div class="blob" style="width:420px;height:420px;bottom:-160px;left:-140px;background:#ff6b6b;animation-delay:-11s"></div>
+  <div class="relative max-w-6xl mx-auto px-6 sm:px-10">
     <div data-inview class="mb-4 text-white/40 text-[13px] tracking-[0.25em] uppercase">Capabilities</div>
     <h2 data-inview style="--d:80ms" class="text-white font-light text-[clamp(30px,6vw,60px)] leading-[1.02] tracking-[-0.03em] mb-16">
       One link.<br>Everything crosses it.
@@ -404,6 +439,10 @@
 <section id="desktop" class="relative bg-black py-28 sm:py-36 overflow-hidden">
   <div class="absolute inset-0 pointer-events-none opacity-[0.08]"
        style="background: radial-gradient(600px circle at 70% 30%, #7d6bff, transparent 60%)"></div>
+  <div class="dot-grid absolute inset-0 pointer-events-none"></div>
+  <div class="scanlines"></div>
+  <div class="wm">Desktop</div>
+  <div class="blob" style="width:460px;height:460px;bottom:-160px;right:-100px;background:#7d6bff;animation-delay:-6s"></div>
   <div class="relative max-w-5xl mx-auto px-6 sm:px-10">
     <div data-inview class="inline-flex items-center gap-2 mb-6">
       <span class="text-[12px] tracking-[0.25em] uppercase" style="color:#8c7bff">Desktop Mode</span>
@@ -431,8 +470,11 @@
 </section>
 
 <!-- ══════════ SECTION 5: SETUP GUIDE (pure black) ══════════ -->
-<section id="setup" class="relative min-h-screen bg-black flex items-center">
-  <div class="w-full max-w-3xl mx-auto px-6 py-32">
+<section id="setup" class="relative min-h-screen bg-black flex items-center overflow-hidden">
+  <div class="dot-grid absolute inset-0 pointer-events-none"></div>
+  <div class="wm">Two Min</div>
+  <div class="blob" style="width:480px;height:480px;top:-140px;left:-160px;background:#7d6bff;animation-delay:-15s"></div>
+  <div class="relative w-full max-w-3xl mx-auto px-6 py-32">
     <div data-inview class="text-center mb-20">
       <p class="text-white/40 text-[13px] sm:text-[14px] tracking-[0.2em] uppercase mb-6">Setup Guide</p>
       <h2 class="text-white font-light text-[clamp(32px,6vw,56px)] leading-[1.05] tracking-[-0.03em]">
@@ -440,7 +482,10 @@
       </h2>
     </div>
 
-    <div class="flex flex-col gap-12">
+    <div class="relative flex flex-col gap-12">
+      <!-- Beam connecting the step numbers -->
+      <div class="absolute left-[9px] top-3 bottom-3 w-px pointer-events-none"
+           style="background: linear-gradient(to bottom, transparent, rgba(125,107,255,0.45) 12%, rgba(125,107,255,0.45) 88%, transparent)"></div>
       <div id="mac-install" data-inview style="--d:0ms; scroll-margin-top:100px" class="flex gap-6">
         <span class="text-white/30 text-[15px] pt-0.5">01</span>
         <div>
