@@ -89,6 +89,9 @@ object ConnectionManager {
     private val _screenSharing = MutableStateFlow(false)
     val screenSharing: StateFlow<Boolean> = _screenSharing
 
+    private val _mirrorNotifications = MutableStateFlow(false)
+    val mirrorNotifications: StateFlow<Boolean> = _mirrorNotifications
+
     // Touchpad events must stay ordered, so a single consumer drains this queue.
     private val inputChannel =
         Channel<Packet>(capacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -96,6 +99,9 @@ object ConnectionManager {
     fun init(context: Context) {
         appContext = context.applicationContext
         createNotificationChannel()
+        _mirrorNotifications.value =
+            appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
+                .getBoolean("mirrorNotifications", false)
         scope.launch {
             for (packet in inputChannel) {
                 try {
@@ -311,6 +317,24 @@ object ConnectionManager {
         scope.launch {
             send(Packet("ping", JSONObject().put("message", "Ping from phone")))
             appendLog("Ping → Mac")
+        }
+    }
+
+    fun setMirrorNotifications(enabled: Boolean) {
+        _mirrorNotifications.value = enabled
+        appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
+            .edit().putBoolean("mirrorNotifications", enabled).apply()
+        appendLog(if (enabled) "Notification mirroring on" else "Notification mirroring off")
+    }
+
+    fun sendNotification(app: String, title: String, text: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("notification", JSONObject().apply {
+                put("app", app)
+                put("title", title)
+                put("text", text)
+            }))
         }
     }
 

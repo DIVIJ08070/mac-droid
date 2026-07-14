@@ -62,6 +62,7 @@ final class ServerManager: ObservableObject {
     }
 
     func start() {
+        Notifier.shared.requestAuthorization()
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
         screenViewer.onLog = { [weak self] message in self?.appendLog(message) }
@@ -214,6 +215,14 @@ final class ServerManager: ObservableObject {
 
         case "heartbeat":
             break // keep-alive traffic, nothing to do
+
+        case "notification":
+            guard isPaired else { return }
+            let app = packet.body["app"] as? String ?? "Phone"
+            let title = packet.body["title"] as? String ?? ""
+            let text = packet.body["text"] as? String ?? ""
+            Notifier.shared.show(app: app, title: title, body: text)
+            appendLog("Notification from \(app)")
 
         case "input":
             guard isPaired else { return }

@@ -599,6 +599,9 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
         Entrance(5) { SectionLabel("Tab Sync", Modifier.padding(top = 8.dp)) }
         Entrance(5) { TabSyncCard() }
 
+        Entrance(5) { SectionLabel("Notifications", Modifier.padding(top = 8.dp)) }
+        Entrance(5) { NotificationsCard() }
+
         Entrance(6) {
             Row(
                 Modifier.padding(top = 8.dp),
@@ -675,6 +678,57 @@ private fun TabSyncCard() {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun NotificationsCard() {
+    val context = LocalContext.current
+    val mirroring by ConnectionManager.mirrorNotifications.collectAsState()
+    val accessGranted by produceState(initialValue = NotificationMirrorService.isEnabled(context)) {
+        while (true) {
+            value = NotificationMirrorService.isEnabled(context)
+            delay(2000)
+        }
+    }
+
+    DarkCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Show phone notifications on the Mac",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.material3.Switch(
+                checked = mirroring && accessGranted,
+                onCheckedChange = { on ->
+                    if (on && !accessGranted) {
+                        context.startActivity(
+                            Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    ConnectionManager.setMirrorNotifications(on)
+                },
+            )
+        }
+        if (mirroring && !accessGranted) {
+            Text(
+                "Grant \"Notification access\" to MacDroid in the settings that just opened, then flip this on again.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+            )
+        } else if (mirroring) {
+            Text(
+                "✓ Your notifications appear on the Mac.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+            )
         }
     }
 }
