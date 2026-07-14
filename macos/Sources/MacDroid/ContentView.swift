@@ -212,6 +212,9 @@ struct ContentView: View {
     private var featureGrid: some View {
         VStack(spacing: 12) {
             desktopModeCard
+            if server.nowPlaying != nil {
+                nowPlayingCard
+            }
             HStack(alignment: .top, spacing: 12) {
                 clipboardCard
                 filesCard
@@ -221,6 +224,57 @@ struct ContentView: View {
                 remoteCard
             }
         }
+    }
+
+    @ViewBuilder
+    private var nowPlayingCard: some View {
+        if let np = server.nowPlaying {
+            HStack(spacing: 14) {
+                Group {
+                    if let art = np.art {
+                        Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Theme.faint)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.white.opacity(0.06))
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    SectionLabel("Now Playing")
+                    Text(np.title.isEmpty ? "Unknown" : np.title)
+                        .font(Theme.mono(14, .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(np.artist)
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    mediaButton("backward.fill") { server.mediaCommand("prev") }
+                    mediaButton(np.playing ? "pause.fill" : "play.fill") { server.mediaCommand("playpause") }
+                    mediaButton("forward.fill") { server.mediaCommand("next") }
+                }
+            }
+            .card()
+        }
+    }
+
+    private func mediaButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.white.opacity(0.10)))
+        }
+        .buttonStyle(.plain)
     }
 
     // A standalone, highlighted card — Desktop Mode is the marquee feature.

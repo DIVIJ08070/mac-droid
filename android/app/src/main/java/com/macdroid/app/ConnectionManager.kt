@@ -112,6 +112,77 @@ object ConnectionManager {
                 }
             }
         }
+        // Poll the phone's active media session and push now-playing to the Mac.
+        scope.launch {
+            while (true) {
+                try {
+                    pollMedia()
+                } catch (_: Exception) {
+                }
+                kotlinx.coroutines.delay(1500)
+            }
+        }
+    }
+
+    private var mediaController: android.media.session.MediaController? = null
+    private var lastMediaKey = ""
+
+    private fun pollMedia() {
+        if (_state.value != ConnectionState.PAIRED) return
+        if (!NotificationMirrorService.isEnabled(appContext)) return
+        val msm = appContext.getSystemService(android.media.session.MediaSessionManager::class.java)
+        val component = android.content.ComponentName(appContext, NotificationMirrorService::class.java)
+        val controllers = msm.getActiveSessions(component)
+        val controller = controllers.firstOrNull {
+            it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+        } ?: controllers.firstOrNull()
+        mediaController = controller
+
+        if (controller == null) {
+            if (lastMediaKey.isNotEmpty()) {
+                lastMediaKey = ""
+                scope.launch { send(Packet("media.none")) }
+            }
+            return
+        }
+
+        val md = controller.metadata
+        val title = md?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+        val artist = (md?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+            ?: md?.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST)).orEmpty()
+        val playing = controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+        val key = "$title|$artist|$playing"
+        if (key == lastMediaKey) return
+        val trackChanged = !lastMediaKey.startsWith("$title|$artist|")
+        lastMediaKey = key
+
+        val body = JSONObject()
+            .put("title", title).put("artist", artist).put("playing", playing)
+        if (trackChanged) {
+            val art = md?.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: md?.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART)
+                ?: md?.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            if (art != null) {
+                val side = 240
+                val scaled = android.graphics.Bitmap.createScaledBitmap(art, side, side, true)
+                val bos = java.io.ByteArrayOutputStream()
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, bos)
+                body.put("art", android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP))
+            }
+        }
+        scope.launch { send(Packet("media.now", body)) }
+    }
+
+    private fun handleMediaCommand(action: String) {
+        val tc = mediaController?.transportControls ?: return
+        val playing = mediaController?.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+        when (action) {
+            "play" -> tc.play()
+            "pause" -> tc.pause()
+            "playpause" -> if (playing) tc.pause() else tc.play()
+            "next" -> tc.skipToNext()
+            "prev" -> tc.skipToPrevious()
+        }
     }
 
     /** Encrypt and write a packet (once the secure channel is up). */
@@ -1011,6 +1082,11 @@ object ConnectionManager {
                 if (_state.value != ConnectionState.PAIRED) return
                 appendLog("Ping from Mac")
                 showNotification("Bifrost", packet.body.optString("message", "Ping from your Mac"), sound = true)
+            }
+
+            "media.command" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                handleMediaCommand(packet.body.optString("action"))
             }
 
             "file.offer" -> {

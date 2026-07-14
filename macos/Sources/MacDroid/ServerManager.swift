@@ -31,6 +31,17 @@ final class ServerManager: ObservableObject {
     @Published var galleryLoading = false
     @Published var galleryHasMore = false
 
+    struct NowPlaying: Equatable {
+        var title: String
+        var artist: String
+        var playing: Bool
+        var art: NSImage?
+        static func == (l: NowPlaying, r: NowPlaying) -> Bool {
+            l.title == r.title && l.artist == r.artist && l.playing == r.playing
+        }
+    }
+    @Published var nowPlaying: NowPlaying?
+
     struct FileEntry: Identifiable {
         var id: String { name }
         let name: String
@@ -255,6 +266,24 @@ final class ServerManager: ObservableObject {
             Notifier.shared.show(app: app, title: title, body: text)
             appendLog("Notification from \(app)")
 
+        case "media.now":
+            guard isPaired else { return }
+            let title = packet.body["title"] as? String ?? ""
+            let artist = packet.body["artist"] as? String ?? ""
+            let playing = packet.body["playing"] as? Bool ?? false
+            // Art only comes when the track changes; keep the previous one otherwise.
+            var art = nowPlaying?.art
+            if let b64 = packet.body["art"] as? String,
+               let data = Data(base64Encoded: b64), let image = NSImage(data: data) {
+                art = image
+            } else if nowPlaying?.title != title {
+                art = nil
+            }
+            nowPlaying = NowPlaying(title: title, artist: artist, playing: playing, art: art)
+
+        case "media.none":
+            nowPlaying = nil
+
         case "input":
             guard isPaired else { return }
             inputController.handle(packet.body) // no logging — these arrive ~60×/second
@@ -428,6 +457,11 @@ final class ServerManager: ObservableObject {
         guard isPaired else { return }
         send(Packet(type: "ping", body: ["message": "Ping from \(deviceName)"]))
         appendLog("Ping → phone")
+    }
+
+    func mediaCommand(_ action: String) {
+        guard isPaired else { return }
+        send(Packet(type: "media.command", body: ["action": action]))
     }
 
     func requestPhoneScreen() {
@@ -1117,6 +1151,7 @@ final class ServerManager: ObservableObject {
         phoneTabURL = nil
         phoneTabTitle = ""
         lastSentTabURL = nil
+        nowPlaying = nil
     }
 
     private func appendLog(_ message: String) {
