@@ -135,7 +135,10 @@ object ConnectionManager {
         if (dx != 0f) body.put("dx", dx.toDouble())
         if (dy != 0f) body.put("dy", dy.toDouble())
         button?.let { body.put("b", it) }
-        gesture?.let { body.put("g", it) }
+        gesture?.let {
+            body.put("g", it)
+            appendLog("Gesture: $it") // infrequent — safe to log for diagnostics
+        }
         inputChannel.trySend(Packet("input", body))
     }
 

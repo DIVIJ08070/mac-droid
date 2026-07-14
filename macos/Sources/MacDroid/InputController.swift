@@ -38,6 +38,7 @@ final class InputController {
 
     /// Mac-trackpad-style gestures, mapped to the system shortcuts they trigger.
     private func gesture(_ name: String) {
+        onLog?("Gesture from phone: \(name)")
         switch name {
         case "3left": keyCombo(124, .maskControl)      // swipe left → next Space (Ctrl+→)
         case "3right": keyCombo(123, .maskControl)     // swipe right → previous Space (Ctrl+←)
@@ -51,14 +52,27 @@ final class InputController {
         }
     }
 
+    // Modifier key codes: Control = 59, Command = 55, Option = 58, Shift = 56.
     private func keyCombo(_ keyCode: CGKeyCode, _ flags: CGEventFlags) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-        down?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-        up?.flags = flags
-        up?.post(tap: .cghidEventTap)
+        let source = CGEventSource(stateID: .combinedSessionState)
+        // Hold the modifier as a real key press — space switching (and many system
+        // shortcuts) ignore a flag that isn't backed by an actual held modifier.
+        let holdControl = flags.contains(.maskControl)
+        let holdCommand = flags.contains(.maskCommand)
+        if holdControl { postKey(59, down: true, flags: .maskControl, source: source) }
+        if holdCommand { postKey(55, down: true, flags: flags, source: source) }
+
+        postKey(keyCode, down: true, flags: flags, source: source)
+        postKey(keyCode, down: false, flags: flags, source: source)
+
+        if holdCommand { postKey(55, down: false, flags: [], source: source) }
+        if holdControl { postKey(59, down: false, flags: [], source: source) }
+    }
+
+    private func postKey(_ keyCode: CGKeyCode, down: Bool, flags: CGEventFlags, source: CGEventSource?) {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { return }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
     }
 
     private func openLaunchpad() {
