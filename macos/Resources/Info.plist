@@ -22,6 +22,12 @@
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Bifrost connects directly to your phone over your Wi-Fi to sync clipboard, files, screen, audio and input. Nothing leaves your local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_macdroid._tcp</string>
+    </array>
     <key>NSAppleEventsUsageDescription</key>
     <string>Bifrost reads the current browser tab to sync it to your phone (tab sync).</string>
     <key>NSHumanReadableCopyright</key>
