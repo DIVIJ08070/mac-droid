@@ -101,6 +101,36 @@ struct PillButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Gradient pill button (used for the marquee Desktop Mode action).
+
+struct GradientButtonStyle: ButtonStyle {
+    var gradient: LinearGradient
+
+    func makeBody(configuration: Configuration) -> some View {
+        GradientBody(configuration: configuration, gradient: gradient)
+    }
+
+    private struct GradientBody: View {
+        let configuration: ButtonStyle.Configuration
+        let gradient: LinearGradient
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(Theme.mono(13, .semibold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(gradient))
+                .scaleEffect(configuration.isPressed ? 0.96 : (hovering ? 1.03 : 1.0))
+                .opacity(hovering ? 0.92 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+                .animation(.easeOut(duration: 0.15), value: hovering)
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
 // MARK: - Entrance animation: fade + slide-up on appear, staggered by delay.
 
 struct RiseIn: ViewModifier {

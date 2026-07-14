@@ -451,7 +451,7 @@ final class ServerManager: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: scrcpyPath)
         process.arguments = [
-            "--new-display=1600x900/300",
+            "--new-display=1600x900/160",
             "--stay-awake", "--no-audio",
             "--window-title=Bifrost Desktop",
         ]

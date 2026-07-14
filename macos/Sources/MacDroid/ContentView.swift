@@ -219,7 +219,75 @@ struct ContentView: View {
                 audioCard
                 remoteCard
             }
+            desktopModeCard
         }
+    }
+
+    // A standalone, highlighted card — Desktop Mode is the marquee feature.
+    private var desktopModeCard: some View {
+        let bifrost = LinearGradient(
+            colors: [
+                Color(red: 1.0, green: 0.42, blue: 0.42),
+                Color(red: 0.55, green: 0.90, blue: 0.55),
+                Color(red: 0.40, green: 0.78, blue: 1.0),
+                Color(red: 0.62, green: 0.55, blue: 1.0),
+            ],
+            startPoint: .leading, endPoint: .trailing
+        )
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "macwindow.on.rectangle")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(bifrost)
+                Text("DESKTOP MODE")
+                    .font(Theme.mono(11, .semibold))
+                    .tracking(3)
+                    .foregroundStyle(.white)
+                Text("BETA")
+                    .font(Theme.mono(8, .bold))
+                    .tracking(1)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(bifrost))
+                Spacer()
+            }
+
+            Text("Open a full Android desktop in its own window on your Mac. Apps run on a separate screen — your phone stays free to use.")
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.dim)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                Text("Needs Wireless debugging on the phone — Settings → Developer options → Wireless debugging.")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                server.launchDesktopMode()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.forward.app")
+                    Text("Open Desktop")
+                }
+            }
+            .buttonStyle(GradientButtonStyle(gradient: bifrost))
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .strokeBorder(bifrost.opacity(0.55), lineWidth: 1.2)
+        )
     }
 
     private var clipboardCard: some View {
@@ -319,7 +387,6 @@ struct ContentView: View {
                 Button("Browse phone files") { server.browsePhoneFiles() }
                 Button("Browse phone gallery") { server.browsePhoneGallery() }
                 Button("Pull photos from phone…") { server.pullPhotosFromPhone() }
-                Button("Desktop Mode (beta)") { server.launchDesktopMode() }
                 Button("Ping phone") { server.pingPhone() }
             }
             if server.fileBrowsing {

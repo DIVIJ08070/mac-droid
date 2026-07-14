@@ -36,7 +36,7 @@ EOF
 fi
 
 RES="${1:-1600x900}"
-DPI="${2:-300}"
+DPI="${2:-160}"
 echo "▸ Opening Bifrost Desktop (${RES} @ ${DPI}dpi)… launch apps inside the new window."
 exec scrcpy \
   --new-display="${RES}/${DPI}" \
