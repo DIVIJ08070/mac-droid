@@ -29,6 +29,7 @@ final class ServerManager: ObservableObject {
     }
     @Published var galleryThumbs: [GalleryThumb] = []
     @Published var galleryLoading = false
+    @Published var galleryHasMore = false
 
     struct FileEntry: Identifiable {
         var id: String { name }
@@ -276,14 +277,17 @@ final class ServerManager: ObservableObject {
             startMirrorToPhone()
 
         case "gallery.thumbs":
-            guard isPaired,
-                  let port = packet.body["port"] as? Int,
-                  let items = packet.body["items"] as? [[String: Any]],
-                  let host = remoteHost()
-            else { return }
+            guard isPaired else { return }
+            galleryHasMore = (packet.body["hasMore"] as? Bool) ?? false
+            let items = packet.body["items"] as? [[String: Any]] ?? []
             let parsed: [(Int, String)] = items.compactMap {
                 guard let id = $0["id"] as? Int else { return nil }
                 return (id, ($0["name"] as? String) ?? "photo")
+            }
+            // Empty page (no port) → just stop the spinner.
+            guard let port = packet.body["port"] as? Int, let host = remoteHost(), !parsed.isEmpty else {
+                galleryLoading = false
+                return
             }
             receiveGalleryThumbs(host: host, port: UInt16(port), items: parsed)
 
@@ -812,9 +816,16 @@ final class ServerManager: ObservableObject {
     func browsePhoneGallery() {
         guard isPaired else { return }
         galleryThumbs = []
+        galleryHasMore = false
         galleryLoading = true
-        send(Packet(type: "gallery.request"))
+        send(Packet(type: "gallery.request", body: ["offset": 0]))
         appendLog("Loading phone gallery…")
+    }
+
+    func loadMoreGallery() {
+        guard isPaired, galleryHasMore, !galleryLoading else { return }
+        galleryLoading = true
+        send(Packet(type: "gallery.request", body: ["offset": galleryThumbs.count]))
     }
 
     /// Tap a thumbnail → pull the full-resolution image to Downloads + reveal.

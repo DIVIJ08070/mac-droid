@@ -599,8 +599,8 @@ object ConnectionManager {
         }
     }
 
-    /** Stream thumbnails of recent gallery photos to the Mac's gallery browser. */
-    private fun serveGalleryThumbnails() {
+    /** Stream a page of gallery thumbnails to the Mac's browser, starting at [offset]. */
+    private fun serveGalleryThumbnails(offset: Int) {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -609,15 +609,26 @@ object ConnectionManager {
                 )
                 val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
                 val items = mutableListOf<Pair<Long, String>>()
+                var total = 0
                 appContext.contentResolver.query(collection, projection, null, null, sort)?.use { c ->
+                    total = c.count
                     val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                     val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                    while (c.moveToNext() && items.size < 150) {
-                        items.add(c.getLong(idCol) to (c.getString(nameCol) ?: "photo"))
+                    if (c.moveToPosition(offset)) {
+                        do {
+                            items.add(c.getLong(idCol) to (c.getString(nameCol) ?: "photo"))
+                        } while (items.size < GALLERY_PAGE_SIZE && c.moveToNext())
                     }
                 }
+                val hasMore = offset + items.size < total
                 if (items.isEmpty()) {
-                    appendLog("No gallery photos found")
+                    // Still tell the Mac (so it can stop the spinner).
+                    send(Packet("gallery.thumbs", JSONObject().apply {
+                        put("offset", offset)
+                        put("hasMore", false)
+                        put("items", org.json.JSONArray())
+                    }))
+                    appendLog("No more gallery photos")
                     return@launch
                 }
 
@@ -627,9 +638,11 @@ object ConnectionManager {
                     items.forEach { arr.put(JSONObject().put("id", it.first).put("name", it.second)) }
                     send(Packet("gallery.thumbs", JSONObject().apply {
                         put("port", server.localPort)
+                        put("offset", offset)
+                        put("hasMore", hasMore)
                         put("items", arr)
                     }))
-                    appendLog("Serving ${items.size} gallery thumbnails")
+                    appendLog("Serving ${items.size} thumbnails (${offset + 1}–${offset + items.size} of $total)")
 
                     server.accept().use { client ->
                         client.tcpNoDelay = true
@@ -912,7 +925,7 @@ object ConnectionManager {
 
             "gallery.request" -> {
                 if (_state.value != ConnectionState.PAIRED) return
-                serveGalleryThumbnails()
+                serveGalleryThumbnails(packet.body.optInt("offset", 0))
             }
 
             "fs.list" -> {
@@ -1171,4 +1184,5 @@ object ConnectionManager {
 
     const val CHANNEL_ID = "macdroid"
     const val SERVICE_CHANNEL_ID = "macdroid_service"
+    private const val GALLERY_PAGE_SIZE = 60
 }

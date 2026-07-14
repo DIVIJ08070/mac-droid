@@ -402,14 +402,14 @@ struct ContentView: View {
     private var galleryGrid: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(server.galleryLoading
+                Text(server.galleryThumbs.isEmpty && server.galleryLoading
                      ? "Loading gallery…"
                      : "\(server.galleryThumbs.count) photos · click one to save to your Mac")
                     .font(.caption)
                     .foregroundStyle(Theme.faint)
                 Spacer()
                 if !server.galleryThumbs.isEmpty {
-                    Button("Close") { server.galleryThumbs = [] }
+                    Button("Close") { server.galleryThumbs = []; server.galleryHasMore = false }
                         .buttonStyle(.plain)
                         .font(.caption)
                         .foregroundStyle(Theme.faint)
@@ -429,6 +429,20 @@ struct ContentView: View {
                     }
                 }
                 .padding(.vertical, 2)
+
+                if server.galleryHasMore || (server.galleryLoading && !server.galleryThumbs.isEmpty) {
+                    Button {
+                        server.loadMoreGallery()
+                    } label: {
+                        if server.galleryLoading {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Load more")
+                        }
+                    }
+                    .disabled(server.galleryLoading)
+                    .padding(.vertical, 6)
+                }
             }
             .frame(height: 220)
         }
