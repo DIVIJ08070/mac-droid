@@ -9,13 +9,18 @@ struct Packet {
         self.body = body
     }
 
-    func encode() -> Data? {
+    /// Raw JSON bytes (no trailing newline) — used before framing/encryption.
+    func jsonData() -> Data? {
         let dict: [String: Any] = [
             "id": Int(Date().timeIntervalSince1970 * 1000),
             "type": type,
             "body": body,
         ]
-        guard var data = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: dict)
+    }
+
+    func encode() -> Data? {
+        guard var data = jsonData() else { return nil }
         data.append(0x0A)
         return data
     }

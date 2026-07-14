@@ -57,6 +57,10 @@ final class ServerManager: ObservableObject {
     private let clipboard = ClipboardWatcher()
     private var audioSender: SystemAudioSender?
 
+    // Per-connection encryption: ECDH key exchange, then AES-GCM on every packet.
+    private var crypto = CryptoBox()
+    private var handshakeDone = false
+
     private var deviceName: String {
         Host.current().localizedName ?? "Mac"
     }
@@ -142,6 +146,8 @@ final class ServerManager: ObservableObject {
         resetSessionState()
         connection = newConnection
         buffer = Data()
+        crypto = CryptoBox()
+        handshakeDone = false
         appendLog("Incoming connection from \(newConnection.endpoint)")
 
         newConnection.stateUpdateHandler = { [weak self, weak newConnection] state in
@@ -149,8 +155,9 @@ final class ServerManager: ObservableObject {
                 guard let self, let newConnection, self.connection === newConnection else { return }
                 switch state {
                 case .ready:
-                    self.statusText = "Phone connected — waiting for pairing"
-                    self.send(Packet(type: "identity", body: ["name": self.deviceName, "device": "mac"]))
+                    self.statusText = "Phone connected — securing…"
+                    // Send our ephemeral public key (plaintext) to start the key exchange.
+                    self.sendRaw(self.crypto.publicKeyBase64 + "\n")
                 case .failed(let error):
                     self.appendLog("Connection failed: \(error.localizedDescription)")
                     self.dropConnection()
@@ -187,10 +194,34 @@ final class ServerManager: ObservableObject {
         while let newlineIndex = buffer.firstIndex(of: 0x0A) {
             let line = buffer.subdata(in: buffer.startIndex..<newlineIndex)
             buffer.removeSubrange(buffer.startIndex...newlineIndex)
-            if let packet = Packet.decode(line) {
-                handle(packet)
+            if !handshakeDone {
+                // First line is the peer's public key.
+                guard let text = String(data: line, encoding: .utf8),
+                      crypto.deriveKey(peerBase64: text) else {
+                    appendLog("Key exchange failed — dropping connection")
+                    dropConnection()
+                    return
+                }
+                handshakeDone = true
+                statusText = "Encrypted — waiting for pairing"
+                appendLog("Secure channel established (AES-256-GCM)")
+                send(Packet(type: "identity", body: ["name": deviceName, "device": "mac"]))
+                continue
             }
+            guard let base64 = String(data: line, encoding: .utf8),
+                  let plaintext = crypto.open(base64),
+                  let packet = Packet.decode(plaintext) else {
+                appendLog("Dropped an undecryptable packet")
+                continue
+            }
+            handle(packet)
         }
+    }
+
+    /// Send bytes on the wire without framing/encryption (used for the KEX line).
+    private func sendRaw(_ text: String) {
+        guard let connection else { return }
+        connection.send(content: Data(text.utf8), completion: .contentProcessed { _ in })
     }
 
     private func handle(_ packet: Packet) {
@@ -936,8 +967,9 @@ final class ServerManager: ObservableObject {
     // MARK: - Plumbing
 
     private func send(_ packet: Packet) {
-        guard let connection, let data = packet.encode() else { return }
-        connection.send(content: data, completion: .contentProcessed { _ in })
+        guard let connection, handshakeDone,
+              let json = packet.jsonData(), let sealed = crypto.seal(json) else { return }
+        connection.send(content: Data((sealed + "\n").utf8), completion: .contentProcessed { _ in })
     }
 
     private func dropConnection() {

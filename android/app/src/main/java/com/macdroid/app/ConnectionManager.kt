@@ -41,6 +41,8 @@ object ConnectionManager {
     private var heartbeatJob: Job? = null
     private var socket: Socket? = null
     private var writer: PrintWriter? = null
+    private var crypto = CryptoBox()
+    @Volatile private var handshakeDone = false
     private lateinit var appContext: Context
 
     // Incremented on every connect/disconnect; a connection attempt that finds the
@@ -105,11 +107,19 @@ object ConnectionManager {
         scope.launch {
             for (packet in inputChannel) {
                 try {
-                    writer?.println(packet.encode())
+                    writePacket(packet)
                 } catch (_: Exception) {
                 }
             }
         }
+    }
+
+    /** Encrypt and write a packet (once the secure channel is up). */
+    private fun writePacket(packet: Packet) {
+        val w = writer ?: return
+        if (!handshakeDone) return
+        val sealed = crypto.seal(packet.encode().toByteArray()) ?: return
+        w.println(sealed)
     }
 
     /** Low-latency touchpad events; dropped silently when not connected. */
@@ -193,6 +203,7 @@ object ConnectionManager {
                 s.tcpNoDelay = true
                 s.keepAlive = true
 
+                val newCrypto = CryptoBox()
                 synchronized(this@ConnectionManager) {
                     if (mySession != sessionId) {
                         s.close()
@@ -200,7 +211,18 @@ object ConnectionManager {
                     }
                     socket = s
                     writer = PrintWriter(s.getOutputStream(), true)
+                    crypto = newCrypto
+                    handshakeDone = false
                 }
+
+                val reader = BufferedReader(InputStreamReader(s.getInputStream()))
+
+                // Key exchange: send our public key, receive the Mac's, derive the AES key.
+                writer!!.println(newCrypto.publicKeyBase64())
+                val peerKey = reader.readLine() ?: throw java.io.IOException("no key from Mac")
+                if (!newCrypto.deriveKey(peerKey)) throw java.io.IOException("key exchange failed")
+                handshakeDone = true
+                appendLog("Secure channel established (AES-256-GCM)")
 
                 send(Packet("identity", JSONObject().apply {
                     put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
@@ -210,10 +232,10 @@ object ConnectionManager {
                 sendPairRequest(mac)
                 startHeartbeat(mySession)
 
-                val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                 while (mySession == sessionId) {
                     val line = reader.readLine() ?: break
-                    Packet.decode(line)?.let { handle(it) }
+                    val json = newCrypto.open(line) ?: continue
+                    Packet.decode(String(json))?.let { handle(it) }
                 }
             } catch (e: Exception) {
                 if (mySession == sessionId) appendLog("Connection error: ${e.message}")
@@ -234,7 +256,7 @@ object ConnectionManager {
                 kotlinx.coroutines.delay(15_000)
                 if (mySession != sessionId) break
                 val w = writer ?: break
-                w.println(Packet("heartbeat").encode())
+                writePacket(Packet("heartbeat"))
                 if (w.checkError()) {
                     appendLog("Link to Mac lost")
                     try {
@@ -287,6 +309,7 @@ object ConnectionManager {
         } catch (_: Exception) {
         }
         socket = null
+        handshakeDone = false
         writer = null
         _pairCode.value = null
         _transferStatus.value = null
@@ -1135,7 +1158,7 @@ object ConnectionManager {
     // MARK: plumbing
 
     private fun send(packet: Packet) {
-        writer?.println(packet.encode())
+        writePacket(packet)
     }
 
     /** Tear down after a connection ends — but only if this session wasn't already superseded. */
@@ -1155,6 +1178,7 @@ object ConnectionManager {
             heartbeatJob?.cancel()
             heartbeatJob = null
             socket = null
+            handshakeDone = false
             writer = null
             _pairCode.value = null
             _transferStatus.value = null
