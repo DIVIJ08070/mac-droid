@@ -498,6 +498,68 @@ object ConnectionManager {
 
     // MARK: file transfer — sending (phone → Mac)
 
+    /** Stream thumbnails of recent gallery photos to the Mac's gallery browser. */
+    private fun serveGalleryThumbnails() {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(
+                    MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME
+                )
+                val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                val items = mutableListOf<Pair<Long, String>>()
+                appContext.contentResolver.query(collection, projection, null, null, sort)?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                    while (c.moveToNext() && items.size < 150) {
+                        items.add(c.getLong(idCol) to (c.getString(nameCol) ?: "photo"))
+                    }
+                }
+                if (items.isEmpty()) {
+                    appendLog("No gallery photos found")
+                    return@launch
+                }
+
+                java.net.ServerSocket(0).use { server ->
+                    server.soTimeout = 20000
+                    val arr = org.json.JSONArray()
+                    items.forEach { arr.put(JSONObject().put("id", it.first).put("name", it.second)) }
+                    send(Packet("gallery.thumbs", JSONObject().apply {
+                        put("port", server.localPort)
+                        put("items", arr)
+                    }))
+                    appendLog("Serving ${items.size} gallery thumbnails")
+
+                    server.accept().use { client ->
+                        client.tcpNoDelay = true
+                        val out = java.io.BufferedOutputStream(client.getOutputStream())
+                        for ((id, _) in items) {
+                            val uri = android.content.ContentUris.withAppendedId(collection, id)
+                            val bytes = try {
+                                val bmp = appContext.contentResolver.loadThumbnail(
+                                    uri, android.util.Size(256, 256), null
+                                )
+                                java.io.ByteArrayOutputStream().use { bos ->
+                                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 72, bos)
+                                    bos.toByteArray()
+                                }
+                            } catch (_: Exception) {
+                                ByteArray(0)
+                            }
+                            val len = java.nio.ByteBuffer.allocate(4).putInt(bytes.size).array()
+                            out.write(len)
+                            out.write(bytes)
+                        }
+                        out.flush()
+                    }
+                }
+                appendLog("Gallery thumbnails sent")
+            } catch (e: Exception) {
+                appendLog("Gallery browse failed: ${e.message}")
+            }
+        }
+    }
+
     /** Send the photos the user picked in the phone's photo picker to the Mac. */
     fun sendPickedPhotos(uris: List<Uri>) {
         if (_state.value != ConnectionState.PAIRED) return
@@ -703,6 +765,22 @@ object ConnectionManager {
                         appContext.startActivity(intent)
                     }
                     else -> sendLatestImage()
+                }
+            }
+
+            "gallery.request" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                serveGalleryThumbnails()
+            }
+
+            "gallery.pull" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val id = packet.body.optLong("id", -1)
+                if (id >= 0) {
+                    val uri = android.content.ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
+                    )
+                    sendFile(uri)
                 }
             }
 

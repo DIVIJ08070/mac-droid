@@ -43,7 +43,10 @@ One JSON object per line, terminated by `\n`:
 | `macscreen.request` | Android → Mac | `{}` | ask the Mac to mirror its screen to the phone |
 | `macscreen.start` | Mac → Android | `{"width": 1280, "height": 800, "port": 54321}` | Mac screen stream ready: raw H.264 Annex-B on the side channel; phone opens a viewer |
 | `macscreen.stop` | both | `{}` | end the Mac→phone screen stream |
-| `pull.request` | Mac → Android | `{"kind": "latest_image"}` | drag-out: Mac requests the phone's most recent photo; phone replies with a `file.offer` carrying `"pull": true`, which the Mac routes into the drag instead of Downloads |
+| `pull.request` | Mac → Android | `{"kind": "latest_image"\|"pick"}` | `latest_image`: phone replies with a `file.offer` carrying `"pull": true` (drag-out). `pick`: phone opens its photo picker and sends the chosen photos |
+| `gallery.request` | Mac → Android | `{}` | Mac wants to browse the phone's gallery |
+| `gallery.thumbs` | Android → Mac | `{"port": 54321, "items": [{"id": 123, "name": "…"}]}` | thumbnail side channel: for each item, `[4-byte length][JPEG]` in order |
+| `gallery.pull` | Mac → Android | `{"id": 123}` | pull the full-resolution image for a gallery item; phone sends it via `file.offer` → Mac Downloads |
 
 ## Audio streaming
 Same side-channel pattern as files, but continuous:

@@ -22,6 +22,14 @@ final class ServerManager: ObservableObject {
 
     @Published var mirroringToPhone = false
 
+    struct GalleryThumb: Identifiable {
+        let id: Int
+        let name: String
+        let image: NSImage
+    }
+    @Published var galleryThumbs: [GalleryThumb] = []
+    @Published var galleryLoading = false
+
     let micReceiver = MicReceiver()
     private let inputController = InputController()
     private let screenViewer = ScreenViewer()
@@ -254,6 +262,18 @@ final class ServerManager: ObservableObject {
         case "macscreen.request":
             guard isPaired else { return }
             startMirrorToPhone()
+
+        case "gallery.thumbs":
+            guard isPaired,
+                  let port = packet.body["port"] as? Int,
+                  let items = packet.body["items"] as? [[String: Any]],
+                  let host = remoteHost()
+            else { return }
+            let parsed: [(Int, String)] = items.compactMap {
+                guard let id = $0["id"] as? Int else { return nil }
+                return (id, ($0["name"] as? String) ?? "photo")
+            }
+            receiveGalleryThumbs(host: host, port: UInt16(port), items: parsed)
 
         case "macscreen.stop":
             stopMirrorToPhone(notifyPhone: false)
@@ -719,6 +739,78 @@ final class ServerManager: ObservableObject {
 
     /// Ask the phone for its most recent photo/screenshot. `completion` gets a
     /// local temp-file URL (or nil on failure/timeout). One pull at a time.
+    // MARK: - Gallery browser
+
+    func browsePhoneGallery() {
+        guard isPaired else { return }
+        galleryThumbs = []
+        galleryLoading = true
+        send(Packet(type: "gallery.request"))
+        appendLog("Loading phone gallery…")
+    }
+
+    /// Tap a thumbnail → pull the full-resolution image to Downloads + reveal.
+    func pullGalleryImage(id: Int) {
+        guard isPaired else { return }
+        expectingPickedPhotos = true
+        send(Packet(type: "gallery.pull", body: ["id": id]))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.expectingPickedPhotos = false
+        }
+    }
+
+    private func receiveGalleryThumbs(host: NWEndpoint.Host, port: UInt16, items: [(Int, String)]) {
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { galleryLoading = false; return }
+        let conn = NWConnection(host: host, port: nwPort, using: .tcp)
+        var buffer = Data()
+        var index = 0
+
+        func drain() {
+            // Each thumbnail is [4-byte big-endian length][JPEG bytes].
+            while index < items.count, buffer.count >= 4 {
+                let len = buffer.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+                guard buffer.count >= 4 + len else { break }
+                let jpeg = buffer.subdata(in: (buffer.startIndex + 4)..<(buffer.startIndex + 4 + len))
+                buffer.removeSubrange(buffer.startIndex..<(buffer.startIndex + 4 + len))
+                let (id, name) = items[index]
+                index += 1
+                if len > 0, let image = NSImage(data: jpeg) {
+                    galleryThumbs.append(GalleryThumb(id: id, name: name, image: image))
+                }
+            }
+            if index >= items.count {
+                galleryLoading = false
+                conn.cancel()
+            }
+        }
+
+        func loop() {
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 262144) { data, _, isComplete, error in
+                Task { @MainActor in
+                    if let data, !data.isEmpty { buffer.append(data); drain() }
+                    if index >= items.count { return }
+                    if isComplete || error != nil {
+                        self.galleryLoading = false
+                        conn.cancel()
+                    } else {
+                        loop()
+                    }
+                }
+            }
+        }
+
+        conn.stateUpdateHandler = { state in
+            Task { @MainActor in
+                switch state {
+                case .ready: loop()
+                case .failed, .waiting: self.galleryLoading = false
+                default: break
+                }
+            }
+        }
+        conn.start(queue: .main)
+    }
+
     /// Ask the phone to open its photo picker; chosen photos arrive as normal
     /// transfers into Downloads and are revealed in Finder.
     func pullPhotosFromPhone() {

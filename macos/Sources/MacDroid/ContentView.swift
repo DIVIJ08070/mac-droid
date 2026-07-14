@@ -316,11 +316,50 @@ struct ContentView: View {
                 } else {
                     Button("Mirror Mac to phone") { server.startMirrorToPhone() }
                 }
+                Button("Browse phone gallery") { server.browsePhoneGallery() }
                 Button("Pull photos from phone…") { server.pullPhotosFromPhone() }
                 Button("Ping phone") { server.pingPhone() }
             }
+            if server.galleryLoading || !server.galleryThumbs.isEmpty {
+                galleryGrid
+            }
         }
         .card()
+    }
+
+    private var galleryGrid: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(server.galleryLoading
+                     ? "Loading gallery…"
+                     : "\(server.galleryThumbs.count) photos · click one to save to your Mac")
+                    .font(.caption)
+                    .foregroundStyle(Theme.faint)
+                Spacer()
+                if !server.galleryThumbs.isEmpty {
+                    Button("Close") { server.galleryThumbs = [] }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(Theme.faint)
+                }
+            }
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 6)], spacing: 6) {
+                    ForEach(server.galleryThumbs) { thumb in
+                        Image(nsImage: thumb.image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 84, height: 84)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                            .onTapGesture { server.pullGalleryImage(id: thumb.id) }
+                            .help("Save \(thumb.name) to your Mac")
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(height: 220)
+        }
     }
 
     private func cardHeader(_ title: String, icon: String) -> some View {
