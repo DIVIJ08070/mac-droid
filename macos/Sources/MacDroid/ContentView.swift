@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var server: ServerManager
     @State private var isDropTargeted = false
+    @State private var showDesktopGuide = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     private var macName: String {
@@ -312,27 +313,35 @@ struct ContentView: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.faint)
-                Text("Needs Wireless debugging on the phone — Settings → Developer options → Wireless debugging.")
+                Text("First time? The Setup guide walks you through everything and checks each step live.")
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.faint)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button {
-                server.launchDesktopMode()
-            } label: {
-                HStack(spacing: 8) {
-                    if server.desktopStarting {
-                        ProgressView().controlSize(.small).tint(.black)
-                        Text("Connecting…")
-                    } else {
-                        Image(systemName: "arrow.up.forward.app")
-                        Text("Open Desktop")
+            HStack(spacing: 10) {
+                Button {
+                    server.launchDesktopMode()
+                } label: {
+                    HStack(spacing: 8) {
+                        if server.desktopStarting {
+                            ProgressView().controlSize(.small).tint(.black)
+                            Text("Connecting…")
+                        } else {
+                            Image(systemName: "arrow.up.forward.app")
+                            Text("Open Desktop")
+                        }
                     }
                 }
+                .buttonStyle(SolidButtonStyle(fill: accent))
+                .disabled(server.desktopStarting)
+
+                Button("Setup guide") { showDesktopGuide = true }
+                    .buttonStyle(PillButtonStyle(kind: .secondary, size: 12))
             }
-            .buttonStyle(SolidButtonStyle(fill: accent))
-            .disabled(server.desktopStarting)
+            .sheet(isPresented: $showDesktopGuide) {
+                DesktopSetupView(server: server)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)

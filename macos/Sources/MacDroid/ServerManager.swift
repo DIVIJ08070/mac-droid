@@ -551,8 +551,11 @@ final class ServerManager: ObservableObject {
             appendLog("Desktop Mode: scrcpy install cancelled")
             return
         }
+        autoLaunchAfterInstall = true
         installDesktopModeTools(brew: brew)
     }
+
+    private var autoLaunchAfterInstall = false
 
     private func installDesktopModeTools(brew: String) {
         desktopStarting = true
@@ -567,12 +570,13 @@ final class ServerManager: ObservableObject {
                 guard let self else { return }
                 self.desktopStarting = false
                 if status == 0, Self.scrcpyPath != nil {
-                    self.appendLog("scrcpy installed ✓ — starting Desktop Mode")
-                    self.launchDesktopMode()
+                    self.appendLog("scrcpy installed ✓")
+                    if self.autoLaunchAfterInstall { self.launchDesktopMode() }
                 } else {
                     let tail = output.split(separator: "\n").suffix(3).joined(separator: " · ")
                     self.appendLog("Install failed (\(tail)) — run “brew install scrcpy” in Terminal instead.")
                 }
+                self.refreshDesktopSetup()
             }
         }
     }
@@ -593,6 +597,83 @@ final class ServerManager: ObservableObject {
         let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         process.waitUntilExit()
         return (process.terminationStatus, output)
+    }
+
+    // MARK: Desktop Mode setup guide
+
+    @Published var setupScrcpyReady = false
+    @Published var setupPhoneReady = false
+    @Published var setupPairingEndpoint: String?
+    @Published var setupPairing = false
+    @Published var setupMessage: String?
+
+    /// One status pass for the setup guide: tools present? phone reachable over
+    /// ADB? is the phone currently showing its pairing dialog (mDNS advertises it)?
+    func refreshDesktopSetup() {
+        Task.detached { [weak self] in
+            let scrcpyReady = Self.scrcpyPath != nil
+            var phoneReady = false
+            var pairingEndpoint: String?
+            if Self.hasADB {
+                func deviceListed() -> Bool {
+                    let out = Self.runADB(["devices"]) ?? ""
+                    return out.split(separator: "\n").dropFirst().contains { $0.hasSuffix("\tdevice") }
+                }
+                phoneReady = deviceListed()
+                let services = Self.runADB(["mdns", "services"]) ?? ""
+                pairingEndpoint = Self.endpoint(in: services, service: "_adb-tls-pairing")
+                if !phoneReady, let connect = Self.endpoint(in: services, service: "_adb-tls-connect") {
+                    _ = Self.runADB(["connect", connect]) // already-paired phone: reconnect silently
+                    phoneReady = deviceListed()
+                }
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.setupScrcpyReady = scrcpyReady
+                self.setupPhoneReady = phoneReady
+                self.setupPairingEndpoint = pairingEndpoint
+            }
+        }
+    }
+
+    private nonisolated static func endpoint(in services: String, service: String) -> String? {
+        guard let line = services.split(separator: "\n").first(where: { $0.contains(service) }),
+              let last = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).last,
+              last.contains(":")
+        else { return nil }
+        return String(last)
+    }
+
+    /// Pair with the endpoint the phone's "Pair device with pairing code" dialog advertises.
+    func pairPhone(code: String) {
+        guard let endpoint = setupPairingEndpoint, !setupPairing else { return }
+        setupPairing = true
+        setupMessage = nil
+        Task.detached { [weak self] in
+            let out = Self.runADB(["pair", endpoint, code]) ?? ""
+            let ok = out.lowercased().contains("successfully paired")
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.setupPairing = false
+                self.setupMessage = ok ? "Paired ✓" : "Pairing failed — check the code on the phone and try again."
+                if ok { self.appendLog("Phone paired for Desktop Mode") }
+            }
+            if ok {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                await MainActor.run { [weak self] in self?.refreshDesktopSetup() }
+            }
+        }
+    }
+
+    /// Install scrcpy/ADB from inside the setup guide (the guide is the consent).
+    func installDesktopEngine() {
+        guard Self.scrcpyPath == nil, !desktopStarting else { return }
+        guard let brew = Self.brewPath else {
+            setupMessage = "Homebrew isn't installed — get it from brew.sh, then run: brew install scrcpy"
+            return
+        }
+        autoLaunchAfterInstall = false // the guide has its own Open Desktop button
+        installDesktopModeTools(brew: brew)
     }
 
     /// Ensure an ADB device is present; if not, restart the server and try to
