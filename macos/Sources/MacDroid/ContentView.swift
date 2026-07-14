@@ -225,20 +225,12 @@ struct ContentView: View {
 
     // A standalone, highlighted card — Desktop Mode is the marquee feature.
     private var desktopModeCard: some View {
-        let bifrost = LinearGradient(
-            colors: [
-                Color(red: 1.0, green: 0.42, blue: 0.42),
-                Color(red: 0.55, green: 0.90, blue: 0.55),
-                Color(red: 0.40, green: 0.78, blue: 1.0),
-                Color(red: 0.62, green: 0.55, blue: 1.0),
-            ],
-            startPoint: .leading, endPoint: .trailing
-        )
+        let accent = Color(red: 0.49, green: 0.42, blue: 1.0) // fixed indigo/violet
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "macwindow.on.rectangle")
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(bifrost)
+                    .foregroundStyle(accent)
                 Text("DESKTOP MODE")
                     .font(Theme.mono(11, .semibold))
                     .tracking(3)
@@ -246,9 +238,9 @@ struct ContentView: View {
                 Text("BETA")
                     .font(Theme.mono(8, .bold))
                     .tracking(1)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(bifrost))
+                    .background(Capsule().fill(accent))
                 Spacer()
             }
 
@@ -281,7 +273,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .buttonStyle(GradientButtonStyle(gradient: bifrost))
+            .buttonStyle(SolidButtonStyle(fill: accent))
             .disabled(server.desktopStarting)
         }
         .padding(18)
@@ -292,7 +284,7 @@ struct ContentView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                .strokeBorder(bifrost.opacity(0.55), lineWidth: 1.2)
+                .strokeBorder(accent.opacity(0.55), lineWidth: 1.2)
         )
     }
 

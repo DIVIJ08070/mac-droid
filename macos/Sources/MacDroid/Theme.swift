@@ -101,29 +101,28 @@ struct PillButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Gradient pill button (used for the marquee Desktop Mode action).
+// MARK: - Solid accent pill button (used for the marquee Desktop Mode action).
 
-struct GradientButtonStyle: ButtonStyle {
-    var gradient: LinearGradient
+struct SolidButtonStyle: ButtonStyle {
+    var fill: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        GradientBody(configuration: configuration, gradient: gradient)
+        SolidBody(configuration: configuration, fill: fill)
     }
 
-    private struct GradientBody: View {
+    private struct SolidBody: View {
         let configuration: ButtonStyle.Configuration
-        let gradient: LinearGradient
+        let fill: Color
         @State private var hovering = false
 
         var body: some View {
             configuration.label
                 .font(Theme.mono(13, .semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(Capsule().fill(gradient))
+                .background(Capsule().fill(fill.opacity(hovering ? 0.85 : 1.0)))
                 .scaleEffect(configuration.isPressed ? 0.96 : (hovering ? 1.03 : 1.0))
-                .opacity(hovering ? 0.92 : 1.0)
                 .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
                 .animation(.easeOut(duration: 0.15), value: hovering)
                 .onHover { hovering = $0 }
