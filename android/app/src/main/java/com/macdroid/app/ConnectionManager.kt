@@ -1379,6 +1379,7 @@ object ConnectionManager {
                 flushPendingShares()
                 startSyncLoop()
                 sendBatteryNow() // seed the Mac's menu-bar battery right away
+                CallBridge.sendCurrentState(appContext) // show the banner for a call already in progress
             }
 
             "pair.reject" -> {

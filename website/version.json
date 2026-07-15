@@ -5,9 +5,9 @@
     "notes": "Manage an active call from your Mac: while you're on a call, the header shows Hang up, Mute and Speaker. Plus everything from 1.5.0 — phone battery in the menu bar, notification action buttons, and the incoming-call banner."
   },
   "android": {
-    "versionCode": 8,
-    "versionName": "0.5.1",
+    "versionCode": 9,
+    "versionName": "0.5.2",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Live-call controls: hang up, mute and speaker from your Mac while you're on a call (mute/speaker are best-effort per phone). Enable the Calls section and grant call permissions to use it."
+    "notes": "Fix: a call already in progress when the phone connects to the Mac now shows the call banner right away (previously it only appeared if the call started while already connected). Plus the live-call controls from 0.5.1."
   }
 }

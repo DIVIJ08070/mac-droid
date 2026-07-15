@@ -104,6 +104,34 @@ object CallBridge {
         if (state == "idle") currentNumber = ""
     }
 
+    /** Push the CURRENT call state to the Mac on (re)connect, so a call already
+     *  in progress when the link comes up still shows the banner. Reads the live
+     *  system state (not just our last-seen broadcast) so it's correct even if the
+     *  app process restarted mid-call — the number may be unknown then, but the
+     *  banner and Hang up still work. */
+    fun sendCurrentState(context: Context) {
+        if (!ConnectionManager.callsEnabled.value) return
+        if (!granted(context, Manifest.permission.READ_PHONE_STATE)) return
+        val tm = context.getSystemService(TelephonyManager::class.java) ?: return
+        val state = try {
+            @Suppress("DEPRECATION") // callState: fine for a non-dialer app with READ_PHONE_STATE
+            when (tm.callState) {
+                TelephonyManager.CALL_STATE_OFFHOOK -> "offhook"
+                TelephonyManager.CALL_STATE_RINGING -> "ringing"
+                else -> return // idle → nothing to show
+            }
+        } catch (e: Exception) {
+            return
+        }
+        lastState = state
+        val name = if (currentNumber.isEmpty()) "" else lookupName(context, currentNumber)
+        if (state == "offhook") {
+            ConnectionManager.sendCallState(state, name, currentNumber, isMuted(context), isSpeakerOn(context))
+        } else {
+            ConnectionManager.sendCallState(state, name, currentNumber)
+        }
+    }
+
     /** Contacts lookup, on-device only; empty when READ_CONTACTS is missing. */
     private fun lookupName(context: Context, number: String): String {
         if (!granted(context, Manifest.permission.READ_CONTACTS)) return ""

@@ -21,8 +21,8 @@ android {
         applicationId = "com.macdroid.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.5.1"
+        versionCode = 9
+        versionName = "0.5.2"
     }
 
     signingConfigs {
