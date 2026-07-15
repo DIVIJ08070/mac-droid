@@ -383,6 +383,30 @@ struct ContentView: View {
             .sheet(isPresented: $showDesktopGuide) {
                 DesktopSetupView(server: server)
             }
+
+            // Optional / advanced, listed last: keyboard+mouse for games.
+            Divider().overlay(Color.white.opacity(0.08))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("⌨️ Play games with keyboard & mouse — advanced")
+                    .font(Theme.mono(10, .medium))
+                    .foregroundStyle(Theme.dim)
+                Text("Use the free tool ").font(Theme.mono(10)).foregroundColor(Theme.faint)
+                + Text("QtScrcpy").font(Theme.mono(10, .medium)).foregroundColor(Color(red: 0.49, green: 0.42, blue: 1.0))
+                + Text(" for a low-latency key-mapper.").font(Theme.mono(10)).foregroundColor(Theme.faint)
+                Text("⚠️ At your own risk — mapping keys/mouse may break a game's rules and get your account banned. Check the game's Terms first.")
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Color(red: 0.95, green: 0.7, blue: 0.3).opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open QtScrcpy ↗") {
+                    if let url = URL(string: "https://github.com/barry-ran/QtScrcpy/releases") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(Theme.mono(10, .medium))
+                .foregroundStyle(Color(red: 0.49, green: 0.42, blue: 1.0))
+                .padding(.top, 2)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
