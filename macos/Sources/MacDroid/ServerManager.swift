@@ -79,6 +79,7 @@ final class ServerManager: ObservableObject {
     }
 
     func start() {
+        Notifier.shared.onLog = { [weak self] message in self?.appendLog(message) }
         Notifier.shared.requestAuthorization()
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
