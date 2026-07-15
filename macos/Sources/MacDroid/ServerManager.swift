@@ -85,6 +85,18 @@ final class ServerManager: ObservableObject {
     func start() {
         if menuBar == nil { menuBar = MenuBarController(server: self) }
         Notifier.shared.onLog = { [weak self] message in self?.appendLog(message) }
+        Notifier.shared.onReply = { [weak self] id, text in
+            guard let self else { return }
+            guard self.isPaired else {
+                // Don't drop the reply silently — the banner outlives the connection.
+                self.appendLog("Reply not sent — phone is disconnected")
+                Notifier.shared.show(app: "Bifrost", title: "Reply not delivered",
+                                     body: "Your phone is disconnected. Reconnect and try again.")
+                return
+            }
+            self.send(Packet(type: "notification.reply", body: ["id": id, "text": text]))
+            self.appendLog("Reply → phone: \(text)")
+        }
         Notifier.shared.requestAuthorization()
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
@@ -279,8 +291,24 @@ final class ServerManager: ObservableObject {
             let app = packet.body["app"] as? String ?? "Phone"
             let title = packet.body["title"] as? String ?? ""
             let text = packet.body["text"] as? String ?? ""
-            Notifier.shared.show(app: app, title: title, body: text)
-            appendLog("Notification from \(app)")
+            let id = packet.body["id"] as? String ?? ""
+            let canReply = packet.body["canReply"] as? Bool ?? false
+            Notifier.shared.show(app: app, title: title, body: text, id: id, canReply: canReply)
+            appendLog("Notification from \(app)\(canReply ? " (repliable)" : "")")
+
+        case "notification.dismiss":
+            guard isPaired else { return }
+            let id = packet.body["id"] as? String ?? ""
+            Notifier.shared.dismiss(id: id)
+
+        case "notification.reply.result":
+            guard isPaired else { return }
+            let ok = packet.body["ok"] as? Bool ?? false
+            if !ok {
+                Notifier.shared.show(app: "Bifrost", title: "Reply not delivered",
+                                     body: "That notification is no longer available on your phone.")
+                appendLog("Reply not delivered — notification gone on phone")
+            }
 
         case "media.now":
             guard isPaired else { return }

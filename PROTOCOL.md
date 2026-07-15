@@ -29,6 +29,10 @@ One JSON object per line, terminated by `\n`:
 | `clipboard.image` | Android → Mac | `{"name": "...", "size": 123, "port": 54321}` | a copied image; Mac pulls the bytes on the side channel and puts it on NSPasteboard so ⌘V pastes it into any app |
 | `ping` | both | `{"message": "..."}` | make the receiver ring/notify (find-my-phone) |
 | `file.offer` | both | `{"name": "...", "size": 123, "port": 54321}` | a file is ready; receiver pulls it from the side channel |
+| `notification` | Android → Mac | `{"app":"…","title":"…","text":"…","id":"…","canReply":true}` | mirror a phone notification; `canReply` if it has an inline reply action |
+| `notification.reply` | Mac → Android | `{"id":"…","text":"…"}` | send a typed reply for notification `id` (fires its inline reply action) |
+| `notification.dismiss` | Android → Mac | `{"id":"…"}` | the phone dismissed/cleared notification `id`; the Mac removes the mirrored banner so it can't be replied to after it's gone |
+| `notification.reply.result` | Android → Mac | `{"id":"…","ok":false}` | a Mac reply could not be delivered (notification no longer present); the Mac tells the user instead of assuming success |
 | `heartbeat` | Android → Mac | `{}` | keep-alive, sent every 15 s; receiver ignores it. A failed write tells the phone the link is dead |
 | `url` | both | `{"url": "https://…"}` | open this link on the receiver's default browser |
 | `command` | Android → Mac | `{"action": "lock"\|"sleep"\|"mute"\|"volume_up"\|"volume_down"\|"playpause"\|"screenshot"}` | remote-control the Mac; `screenshot` captures and sends the image back as a file |

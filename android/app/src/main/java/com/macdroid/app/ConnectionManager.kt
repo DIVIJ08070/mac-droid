@@ -559,14 +559,24 @@ object ConnectionManager {
         appendLog(if (enabled) "Notification mirroring on" else "Notification mirroring off")
     }
 
-    fun sendNotification(app: String, title: String, text: String) {
+    fun sendNotification(app: String, title: String, text: String, id: String, canReply: Boolean) {
         if (_state.value != ConnectionState.PAIRED) return
         scope.launch {
             send(Packet("notification", JSONObject().apply {
                 put("app", app)
                 put("title", title)
                 put("text", text)
+                put("id", id)
+                put("canReply", canReply)
             }))
+        }
+    }
+
+    /** Tell the Mac to remove a mirrored banner the phone just dismissed. */
+    fun sendNotificationDismiss(id: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("notification.dismiss", JSONObject().put("id", id)))
         }
     }
 
@@ -1166,6 +1176,23 @@ object ConnectionManager {
             "media.command" -> {
                 if (_state.value != ConnectionState.PAIRED) return
                 handleMediaCommand(packet.body.optString("action"))
+            }
+
+            "notification.reply" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val id = packet.body.optString("id")
+                val text = packet.body.optString("text")
+                val ok = NotificationMirrorService.instance?.reply(id, text) ?: false
+                appendLog(if (ok) "Replied from Mac ✓" else "Reply failed (notification gone?)")
+                if (!ok) {
+                    // Let the Mac tell the user instead of silently swallowing the reply.
+                    scope.launch {
+                        send(Packet("notification.reply.result", JSONObject().apply {
+                            put("id", id)
+                            put("ok", false)
+                        }))
+                    }
+                }
             }
 
             "file.offer" -> {
