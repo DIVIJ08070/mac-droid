@@ -78,7 +78,12 @@ final class ServerManager: ObservableObject {
         Host.current().localizedName ?? "Mac"
     }
 
+    private var menuBar: MenuBarController?
+
+    func appendLogPublic(_ message: String) { appendLog(message) }
+
     func start() {
+        if menuBar == nil { menuBar = MenuBarController(server: self) }
         Notifier.shared.onLog = { [weak self] message in self?.appendLog(message) }
         Notifier.shared.requestAuthorization()
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
