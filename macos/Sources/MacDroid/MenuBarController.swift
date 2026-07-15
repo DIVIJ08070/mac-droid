@@ -102,6 +102,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(call)
         }
 
+        if server.callState == "offhook" {
+            let call = NSMenuItem(
+                title: "On call · \(server.callerDisplay.isEmpty ? "in progress" : server.callerDisplay)",
+                action: nil, keyEquivalent: ""
+            )
+            call.isEnabled = false
+            menu.addItem(call)
+            menu.addItem(action("Hang up", #selector(hangUpCall)))
+        }
+
         if let np = server.nowPlaying, np.playing {
             let track = NSMenuItem(title: "♪ \(np.title) — \(np.artist)", action: nil, keyEquivalent: "")
             track.isEnabled = false
@@ -135,6 +145,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func pullPhotos() { server.pullPhotosFromPhone() }
     @objc private func openDesktop() { server.launchDesktopMode() }
     @objc private func ping() { server.pingPhone() }
+    @objc private func hangUpCall() { server.callAction("hangup") }
 
     @objc private func showWindow() {
         NSApp.setActivationPolicy(.regular)

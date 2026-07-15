@@ -259,6 +259,9 @@ struct ContentView: View {
                         HelpButton(help: .callBanner)
                     }
                 }
+                if server.callState == "offhook" {
+                    onCallRow
+                }
                 Text("Clipboard, files, audio and input — live over your private link.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
@@ -307,6 +310,69 @@ struct ContentView: View {
         }
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Ongoing (offhook) call controls
+
+    /// Compact live-call row in the connected header: caller + Hang up / Mute /
+    /// Speaker. Mute & Speaker reflect the phone's REAL reported state (callMuted
+    /// / callSpeaker) — we send the action and let the next call.state flip them,
+    /// so a toggle never lies if the phone's OS refused the change.
+    private var onCallRow: some View {
+        let callAccent = Color(red: 0.45, green: 0.95, blue: 0.6)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "phone.connection.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(callAccent)
+                Text("On call\(server.callerDisplay.isEmpty ? "" : " — \(server.callerDisplay)")")
+                    .font(Theme.mono(12, .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                HelpButton(help: .callBanner)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    server.callAction("hangup")
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "phone.down.fill")
+                        Text("Hang up")
+                    }
+                }
+                .buttonStyle(CallControlStyle(active: false, destructive: true))
+
+                Button {
+                    server.callAction(server.callMuted ? "unmute" : "mute")
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: server.callMuted ? "mic.slash.fill" : "mic.fill")
+                        Text(server.callMuted ? "Unmute" : "Mute")
+                    }
+                }
+                .buttonStyle(CallControlStyle(active: server.callMuted, destructive: false))
+
+                Button {
+                    server.callAction(server.callSpeaker ? "speaker_off" : "speaker_on")
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: server.callSpeaker ? "speaker.wave.2.fill" : "speaker.fill")
+                        Text("Speaker")
+                    }
+                }
+                .buttonStyle(CallControlStyle(active: server.callSpeaker, destructive: false))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .fill(callAccent.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .strokeBorder(callAccent.opacity(0.4), lineWidth: 1)
+        )
     }
 
     /// Small capsule with the phone's battery: tiered SF Symbols glyph (bolt when

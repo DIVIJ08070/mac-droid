@@ -469,9 +469,10 @@ object HelpContent {
 
     val permAnswerCalls = HelpPermission(
         name = "Make and manage phone calls",
-        why = "\"Decline\" on the Mac rejects the ringing call through Android's telecom service, which requires " +
-            "this permission. Bifrost never places calls.",
-        blocked = "The Decline button on the Mac will do nothing until you grant it — Silence still works.",
+        why = "\"Decline\" (while ringing) and \"Hang up\" (while on a call) on the Mac end the call through " +
+            "Android's telecom service, which requires this permission. Bifrost never places calls.",
+        blocked = "The Decline and Hang up buttons on the Mac will do nothing until you grant it — Silence, " +
+            "Mute and Speaker still work.",
         grantPath = "Settings → Apps → Bifrost → Permissions → Phone → Allow",
         openSettings = ::appSettings,
     )
@@ -631,19 +632,25 @@ object HelpContent {
         what = "When this phone rings, a banner appears on the Mac with the caller's name and number — and the Mac " +
             "pauses whatever it is playing so you actually hear the ring (it never auto-resumes; press play " +
             "yourself). Silence mutes the ringer for that call only: your normal ringer mode comes back the " +
-            "moment the call ends. Decline rejects the call outright. The call itself always stays on the " +
-            "phone — Bifrost never routes call audio.",
+            "moment the call ends. Decline rejects the call outright. Once you're on a call, the Mac's connected " +
+            "header shows an \"On call\" row where you can hang up, mute/unmute the mic, and turn the speaker on " +
+            "or off — the toggles mirror the phone's real state. The call itself always stays on the phone — " +
+            "Bifrost never routes call audio.",
         howTo = listOf(
             "Flip the switch — the first time, Android asks for the phone permissions. Grant them all; " +
                 "Contacts is optional but adds caller names.",
             "When a call comes in, the banner shows on the Mac with Silence and Decline buttons.",
             "Silence: this ring goes quiet on the phone, the caller keeps hearing ringing.",
             "Decline: the call is rejected, like tapping the red button on the phone.",
+            "During an active call, the Mac shows Hang up, Mute and Speaker controls that reflect the phone's " +
+                "real mute and speaker state.",
         ),
         permissions = listOf(permPhoneState, permCallLog, permAnswerCalls, permContacts),
         troubleshoot = "No banner? Check the switch is on, all phone permissions are granted, and the devices are " +
             "connected. Silence only vibrating instead of muting? Some phones require Do Not Disturb access to " +
-            "fully silence the ringer — Bifrost falls back to vibrate there.",
+            "fully silence the ringer — Bifrost falls back to vibrate there. Mute or Speaker not flipping? Those " +
+            "are best-effort — some phones and Android versions won't let a background app change the call route, " +
+            "so the toggle simply stays put rather than lying.",
     )
 
     val battery = FeatureHelp(

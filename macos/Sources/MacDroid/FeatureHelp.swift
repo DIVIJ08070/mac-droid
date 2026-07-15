@@ -347,8 +347,8 @@ extension HelpPermission {
 
     static let phoneCallAccess = HelpPermission(
         name: "Phone & call permissions (on the phone)",
-        why: "Detecting a ringing call needs Android's Phone permission; showing the number needs Call log; the caller's name needs Contacts; Decline needs Answer calls; Silence needs Do Not Disturb access to change the ringer.",
-        blocks: "The incoming-call banner (and its Silence/Decline buttons) will not work until the phone-side permissions are granted.",
+        why: "Detecting a ringing call needs Android's Phone permission; showing the number needs Call log; the caller's name needs Contacts; Decline and Hang up need Answer calls; Silence needs Do Not Disturb access to change the ringer. Mute and Speaker during a call are best-effort — the phone honors them when Android allows it.",
+        blocks: "The incoming-call banner (Silence/Decline) and the on-call controls (Hang up/Mute/Speaker) will not work until the phone-side permissions are granted.",
         howToGrant: "On the phone, Bifrost shows a permission badge with grant buttons for each of these — tap through them once and the call banner starts working.",
         pane: nil,
         granted: nil
@@ -514,15 +514,16 @@ extension FeatureHelp {
     static let callBanner = FeatureHelp(
         title: "Call Banner",
         icon: "phone.arrow.down.left",
-        what: "When your phone rings, this Mac shows a high-priority banner with the caller's name and number and two buttons: Silence (mutes the ringer for this ring only — your previous ringer mode comes back after the call) and Decline (rejects the call). Bifrost also pauses the Mac's local media playback so you actually hear the phone — it does not auto-resume.",
+        what: "When your phone rings, this Mac shows a high-priority banner with the caller's name and number and two buttons: Silence (mutes the ringer for this ring only — your previous ringer mode comes back after the call) and Decline (rejects the call). Bifrost also pauses the Mac's local media playback so you actually hear the phone — it does not auto-resume. Once you're ON a call, an \"On call\" row appears in the connected header with live controls: Hang up, Mute/Unmute and Speaker.",
         steps: [
             "Phone rings → banner appears here with the caller and the ringing indicator shows in the header.",
             "Silence: the phone stops ringing but the call keeps ringing for the caller — answer on the phone if you want it.",
             "Decline: the call is rejected outright.",
-            "Answer or end the call on the phone and the banner clears by itself.",
+            "Once the call connects, the \"On call — <caller>\" row in the header lets you Hang up (ends the call), Mute/Unmute the mic, and toggle Speaker — all from the Mac. Hang up is also in the menu bar.",
+            "Mute and Speaker mirror the phone's REAL state: the button highlights only after the phone confirms the change, so it never shows the wrong state. Answer or end the call on the phone (or click Hang up) and the row clears by itself.",
         ],
         permissions: [.notifications, .phoneCallAccess],
-        troubleshooting: "No banner when the phone rings? Grant the phone-side permissions (the phone app shows grant buttons for each) and allow notifications for Bifrost here. Media didn't pause? The play/pause key needs the Accessibility-style event injection to be permitted — check the Activity log."
+        troubleshooting: "No banner when the phone rings? Grant the phone-side permissions (the phone app shows grant buttons for each) and allow notifications for Bifrost here. Media didn't pause? The play/pause key needs the Accessibility-style event injection to be permitted — check the Activity log. Mute or Speaker didn't flip? Those are best-effort on the phone — some Android versions or Bluetooth headsets won't let an app change them, so Bifrost leaves the toggle where it is rather than lying. Hang up needs the phone's \"Answer calls\" permission."
     )
 
     static let activity = FeatureHelp(

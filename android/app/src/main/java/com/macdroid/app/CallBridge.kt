@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.provider.ContactsContract
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
@@ -19,10 +21,18 @@ import androidx.core.content.ContextCompat
  * "silence" mutes the ringer for THIS ring only (the previous ringer mode comes
  * back when the call ends), "decline" rejects the ringing call.
  *
+ * While a call is active (offhook) the Mac can also manage it: "hangup" ends the
+ * active call, "mute"/"unmute" toggle the call microphone, and
+ * "speaker_on"/"speaker_off" toggle the speakerphone. Every offhook call.state
+ * carries the phone's REAL {muted, speaker} state, and any mute/speaker action
+ * re-emits call.state with the resulting real values so the Mac toggles never lie.
+ *
  * Everything degrades gracefully: without READ_PHONE_STATE the protected
  * PHONE_STATE broadcast is simply never delivered, without READ_CALL_LOG the
  * number extra stays empty, without READ_CONTACTS the name stays empty, and
- * without ANSWER_PHONE_CALLS decline is a no-op. No permission → no crash.
+ * without ANSWER_PHONE_CALLS decline/hangup are no-ops. Mute/speaker are
+ * best-effort — if the OS refuses, the real (unchanged) state is reported rather
+ * than lying or crashing. No permission → no crash.
  */
 object CallBridge {
 
@@ -86,7 +96,11 @@ object CallBridge {
         if (number.isNotEmpty()) currentNumber = number
 
         val name = if (currentNumber.isEmpty()) "" else lookupName(context, currentNumber)
-        ConnectionManager.sendCallState(state, name, currentNumber)
+        if (state == "offhook") {
+            ConnectionManager.sendCallState(state, name, currentNumber, isMuted(context), isSpeakerOn(context))
+        } else {
+            ConnectionManager.sendCallState(state, name, currentNumber)
+        }
         if (state == "idle") currentNumber = ""
     }
 
@@ -109,8 +123,86 @@ object CallBridge {
     fun handleAction(context: Context, action: String) {
         when (action) {
             "silence" -> silenceRinger(context)
-            "decline" -> declineCall(context)
+            // decline (ringing) and hangup (offhook) are the same TelecomManager
+            // call — endCall() ends whichever call is current.
+            "decline", "hangup" -> endCall(context)
+            "mute" -> setMic(context, true)
+            "unmute" -> setMic(context, false)
+            "speaker_on" -> setSpeaker(context, true)
+            "speaker_off" -> setSpeaker(context, false)
         }
+    }
+
+    // MARK: ongoing-call controls (best-effort — never crash if the OS refuses)
+
+    /** Toggle the call microphone, then re-emit real state so the Mac reflects truth. */
+    private fun setMic(context: Context, mute: Boolean) {
+        val am = context.getSystemService(AudioManager::class.java)
+        try {
+            am?.isMicrophoneMute = mute
+        } catch (e: Exception) {
+            android.util.Log.w("MacDroid", "Mic mute failed: ${e.message}")
+        }
+        reEmitState(context)
+    }
+
+    /** Toggle speakerphone vs earpiece, then re-emit real state. */
+    @Suppress("DEPRECATION") // setSpeakerphoneOn is the only pre-API-31 route
+    private fun setSpeaker(context: Context, on: Boolean) {
+        val am = context.getSystemService(AudioManager::class.java) ?: run {
+            reEmitState(context); return
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (on) {
+                    val speaker = am.availableCommunicationDevices
+                        .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    if (speaker != null) am.setCommunicationDevice(speaker)
+                } else {
+                    // Earpiece: clearing the override lets the platform pick the
+                    // default route (earpiece for a normal in-call), but prefer the
+                    // built-in earpiece explicitly when it's available.
+                    val earpiece = am.availableCommunicationDevices
+                        .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                    if (earpiece != null) am.setCommunicationDevice(earpiece)
+                    else am.clearCommunicationDevice()
+                }
+            } else {
+                am.isSpeakerphoneOn = on
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MacDroid", "Speaker toggle failed: ${e.message}")
+        }
+        reEmitState(context)
+    }
+
+    /** Real mic-mute state. */
+    private fun isMuted(context: Context): Boolean = try {
+        context.getSystemService(AudioManager::class.java)?.isMicrophoneMute ?: false
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Real speakerphone state. */
+    @Suppress("DEPRECATION") // isSpeakerphoneOn is the only pre-API-31 route
+    private fun isSpeakerOn(context: Context): Boolean = try {
+        val am = context.getSystemService(AudioManager::class.java) ?: return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            am.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        } else {
+            am.isSpeakerphoneOn
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Re-send call.state with the current real audio state after a mute/speaker action. */
+    private fun reEmitState(context: Context) {
+        if (lastState != "offhook") return
+        val name = if (currentNumber.isEmpty()) "" else lookupName(context, currentNumber)
+        ConnectionManager.sendCallState(
+            "offhook", name, currentNumber, isMuted(context), isSpeakerOn(context)
+        )
     }
 
     private fun silenceRinger(context: Context) {
@@ -139,13 +231,16 @@ object CallBridge {
         }
     }
 
-    @Suppress("DEPRECATION") // endCall(): the only non-dialer way to reject a call
-    private fun declineCall(context: Context) {
+    /** Ends the current call — rejects it while ringing (decline), ends it while
+     *  active (hangup). endCall() targets whichever call is current, so one path
+     *  serves both. */
+    @Suppress("DEPRECATION") // endCall(): the only non-dialer way to end a call
+    private fun endCall(context: Context) {
         if (!granted(context, Manifest.permission.ANSWER_PHONE_CALLS)) return
         try {
             context.getSystemService(TelecomManager::class.java)?.endCall()
         } catch (e: Exception) {
-            android.util.Log.w("MacDroid", "Decline failed: ${e.message}")
+            android.util.Log.w("MacDroid", "End call failed: ${e.message}")
         }
     }
 }

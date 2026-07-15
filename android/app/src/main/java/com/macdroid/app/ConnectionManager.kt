@@ -279,14 +279,24 @@ object ConnectionManager {
         appendLog(if (enabled) "Call banners on Mac on" else "Call banners on Mac off")
     }
 
-    /** ringing / offhook / idle → the Mac's incoming-call banner. */
-    fun sendCallState(state: String, name: String, number: String) {
+    /** ringing / offhook / idle → the Mac's incoming-call banner. During offhook
+     *  the phone's REAL mic-mute and speakerphone state ride along so the Mac's
+     *  live-call toggles reflect truth. */
+    fun sendCallState(
+        state: String,
+        name: String,
+        number: String,
+        muted: Boolean? = null,
+        speaker: Boolean? = null,
+    ) {
         if (_state.value != ConnectionState.PAIRED) return
         scope.launch {
             send(Packet("call.state", JSONObject().apply {
                 put("state", state)
                 put("name", name)
                 put("number", number)
+                if (muted != null) put("muted", muted)
+                if (speaker != null) put("speaker", speaker)
             }))
         }
         appendLog("Call $state → Mac")

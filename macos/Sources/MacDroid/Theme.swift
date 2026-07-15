@@ -130,6 +130,61 @@ struct SolidButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Ongoing-call control pill.
+// Hang up is a red/destructive tint. Mute/Speaker highlight (filled green) when
+// `active` reflects the phone's real reported state, so the pill mirrors the
+// phone instead of an optimistic guess.
+
+struct CallControlStyle: ButtonStyle {
+    var active: Bool = false
+    var destructive: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        CallBody(configuration: configuration, active: active, destructive: destructive)
+    }
+
+    private struct CallBody: View {
+        let configuration: ButtonStyle.Configuration
+        let active: Bool
+        let destructive: Bool
+        @State private var hovering = false
+
+        private static let red = Color(red: 1.0, green: 0.35, blue: 0.35)
+        private static let green = Color(red: 0.45, green: 0.95, blue: 0.6)
+
+        private var fill: Color {
+            if destructive { return Self.red.opacity(hovering ? 0.28 : 0.18) }
+            if active { return Self.green.opacity(hovering ? 0.32 : 0.22) }
+            return Color.white.opacity(hovering ? 0.20 : 0.12)
+        }
+        private var stroke: Color {
+            if destructive { return Self.red.opacity(0.5) }
+            if active { return Self.green.opacity(0.55) }
+            return Color.white.opacity(0.12)
+        }
+        private var foreground: Color {
+            if destructive { return Self.red }
+            if active { return Self.green }
+            return Color.white
+        }
+
+        var body: some View {
+            configuration.label
+                .font(Theme.mono(11, .medium))
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(fill))
+                .overlay(Capsule().strokeBorder(stroke, lineWidth: 1))
+                .scaleEffect(configuration.isPressed ? 0.96 : (hovering ? 1.02 : 1.0))
+                .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+                .animation(.easeOut(duration: 0.15), value: hovering)
+                .animation(.easeOut(duration: 0.15), value: active)
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
 // MARK: - Entrance animation: fade + slide-up on appear, staggered by delay.
 
 struct RiseIn: ViewModifier {

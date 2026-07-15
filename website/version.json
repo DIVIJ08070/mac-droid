@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.5.0",
+    "version": "1.5.1",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Phone battery now shows in the Mac menu bar with low-battery alerts. Mirrored notifications get real action buttons (snooze, archive, dismiss) right on the Mac banner. Incoming calls show a banner with Silence and Decline. Plus a built-in help (?) on every feature."
+    "notes": "Manage an active call from your Mac: while you're on a call, the header shows Hang up, Mute and Speaker. Plus everything from 1.5.0 — phone battery in the menu bar, notification action buttons, and the incoming-call banner."
   },
   "android": {
-    "versionCode": 7,
-    "versionName": "0.5.0",
+    "versionCode": 8,
+    "versionName": "0.5.1",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Send your battery and calls to the Mac: an incoming call shows on your Mac with Silence and Decline, and notification action buttons work from the Mac banner. New Calls section (grant call permissions to enable it). Plus a built-in help (?) on every feature."
+    "notes": "Live-call controls: hang up, mute and speaker from your Mac while you're on a call (mute/speaker are best-effort per phone). Enable the Calls section and grant call permissions to use it."
   }
 }

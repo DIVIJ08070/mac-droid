@@ -58,6 +58,10 @@ final class ServerManager: ObservableObject {
     // Incoming-call state, from `call.state` packets.
     @Published var callState = "idle"
     @Published var callerDisplay = ""
+    // Live mic-mute / speakerphone state during an active (offhook) call. These
+    // mirror the phone's ACTUAL reported state so the Mac toggles never lie.
+    @Published var callMuted = false
+    @Published var callSpeaker = false
 
     struct FileEntry: Identifiable {
         var id: String { name }
@@ -366,7 +370,9 @@ final class ServerManager: ObservableObject {
             guard isPaired, let state = packet.body["state"] as? String else { return }
             handleCallState(state,
                             name: packet.body["name"] as? String ?? "",
-                            number: packet.body["number"] as? String ?? "")
+                            number: packet.body["number"] as? String ?? "",
+                            muted: packet.body["muted"] as? Bool,
+                            speaker: packet.body["speaker"] as? Bool)
 
         case "notification.dismiss":
             guard isPaired else { return }
@@ -629,11 +635,16 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Incoming calls
 
-    private func handleCallState(_ state: String, name: String, number: String) {
+    private func handleCallState(_ state: String, name: String, number: String,
+                                 muted: Bool?, speaker: Bool?) {
         let display = name.isEmpty ? number : name
         let wasRinging = callState == "ringing"
         callState = state
         callerDisplay = display
+        // Optional live mic/speaker state, present during offhook. Absent fields
+        // leave the last-known value untouched (never flip a toggle on nothing).
+        if let muted { callMuted = muted }
+        if let speaker { callSpeaker = speaker }
 
         switch state {
         case "ringing":
@@ -649,7 +660,28 @@ final class ServerManager: ObservableObject {
             Notifier.shared.dismissCall()
             if wasRinging { appendLog("Call ended") }
             callerDisplay = ""
+            callMuted = false
+            callSpeaker = false
         }
+    }
+
+    /// Send an ongoing-call control to the phone (hangup / mute / unmute /
+    /// speaker_on / speaker_off). We DON'T optimistically flip callMuted/
+    /// callSpeaker — the phone re-emits `call.state` with the real resulting
+    /// values, so the toggle can't lie if the OS refused the change.
+    func callAction(_ action: String) {
+        guard isPaired else { return }
+        send(Packet(type: "call.action", body: ["action": action]))
+        let label: String
+        switch action {
+        case "hangup":      label = "Hung up the call"
+        case "mute":        label = "Muted the call mic"
+        case "unmute":      label = "Unmuted the call mic"
+        case "speaker_on":  label = "Turned speakerphone on"
+        case "speaker_off": label = "Turned speakerphone off"
+        default:            label = "Call action → phone"
+        }
+        appendLog(label)
     }
 
     // MARK: - Actions
@@ -1647,6 +1679,8 @@ final class ServerManager: ObservableObject {
         menuBar?.updateBattery(level: nil, charging: false)
         callState = "idle"
         callerDisplay = ""
+        callMuted = false
+        callSpeaker = false
         Notifier.shared.dismissCall()
     }
 
