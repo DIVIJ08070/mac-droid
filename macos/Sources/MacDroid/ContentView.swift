@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var server: ServerManager
     @StateObject private var updater = Updater()
+    @ObservedObject private var perms = PermissionMonitor.shared
     @State private var isDropTargeted = false
     @State private var showDesktopGuide = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -31,7 +32,10 @@ struct ContentView: View {
         }
         .frame(minWidth: 640, minHeight: 640)
         .preferredColorScheme(.dark)
-        .onAppear { updater.check() }
+        .onAppear {
+            updater.check()
+            PermissionMonitor.shared.start()
+        }
         .overlay { dropOverlay }
         .onDrop(of: [.fileURL, .image, .movie], isTargeted: $isDropTargeted) { providers in
             guard server.isPaired else { return false }
@@ -165,6 +169,11 @@ struct ContentView: View {
 
                     statusHeader
                         .riseIn(delay: 0.05)
+
+                    if !perms.accessibilityOK || !perms.notificationsOK {
+                        permissionsStrip
+                            .riseIn(delay: 0.07)
+                    }
 
                     if let code = server.pendingPairCode {
                         pairingCard(code: code)
@@ -520,7 +529,15 @@ struct ContentView: View {
 
     private var audioCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader("Audio", icon: "speaker.wave.2")
+            HStack(spacing: 8) {
+                cardHeader("Audio", icon: "speaker.wave.2")
+                if !perms.screenRecordingOK {
+                    permissionBadge(
+                        "\"Stream Mac audio to phone\" captures system audio with ScreenCaptureKit — for this to work, allow Screen Recording for Bifrost. Click to open System Settings.",
+                        pane: PermissionMonitor.screenRecordingPane
+                    )
+                }
+            }
             Toggle(isOn: Binding(
                 get: { server.speakerStreaming },
                 set: { enabled in
@@ -545,7 +562,15 @@ struct ContentView: View {
 
     private var remoteCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader("Remote", icon: "rectangle.on.rectangle")
+            HStack(spacing: 8) {
+                cardHeader("Remote", icon: "rectangle.on.rectangle")
+                if !perms.screenRecordingOK {
+                    permissionBadge(
+                        "\"Mirror Mac to phone\" and remote screenshots capture this screen — for this to work, allow Screen Recording for Bifrost. Click to open System Settings.",
+                        pane: PermissionMonitor.screenRecordingPane
+                    )
+                }
+            }
             wrapButtons {
                 if server.screenViewing {
                     Button("Stop viewing screen") { server.stopPhoneScreen() }
@@ -727,6 +752,61 @@ struct ContentView: View {
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(Theme.faint)
             SectionLabel(title)
+        }
+    }
+
+    // MARK: - Permission badges
+
+    /// Small warning triangle next to a feature that can't work yet: hover
+    /// explains which permission to allow, click opens the exact Settings pane.
+    private func permissionBadge(_ tooltip: String, pane: String) -> some View {
+        Image(systemName: "exclamationmark.triangle.fill")
+            .font(.system(size: 11))
+            .foregroundColor(.orange)
+            .help(tooltip)
+            .onTapGesture {
+                if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+            }
+    }
+
+    /// Chips for permissions whose features are phone-driven (no Mac card):
+    /// touchpad/presenter/media keys (Accessibility) and banners (Notifications).
+    private var permissionsStrip: some View {
+        HStack(spacing: 8) {
+            if !perms.accessibilityOK {
+                permissionChip(
+                    "Accessibility",
+                    tooltip: "The phone's touchpad, presentation clicker and media keys control this Mac — for this to work, allow Accessibility for Bifrost. Click to open System Settings.",
+                    pane: PermissionMonitor.accessibilityPane
+                )
+            }
+            if !perms.notificationsOK {
+                permissionChip(
+                    "Notifications",
+                    tooltip: "Phone notifications won't pop up on this Mac — for this to work, allow notifications for Bifrost (style: Banners or Alerts). Click to open System Settings.",
+                    pane: PermissionMonitor.notificationsPane
+                )
+            }
+            Spacer()
+        }
+    }
+
+    private func permissionChip(_ label: String, tooltip: String, pane: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundColor(.orange)
+            Text("\(label) permission needed")
+                .font(Theme.mono(10))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color.orange.opacity(0.12)))
+        .overlay(Capsule().strokeBorder(Color.orange.opacity(0.4), lineWidth: 1))
+        .help(tooltip)
+        .onTapGesture {
+            if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
         }
     }
 

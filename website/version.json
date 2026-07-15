@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.2.1",
+    "version": "1.3.1",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "One-click in-app updates: hit Update and Bifrost downloads, verifies the signature, swaps itself, and relaunches — no browser, no dragging. Includes reply-from-Mac hardening."
+    "notes": "Permission badges: any feature that needs a macOS permission now shows a warning you can hover and click to fix, so nothing silently fails. Plus the safer one-click self-updater."
   },
   "android": {
-    "versionCode": 2,
-    "versionName": "0.2",
+    "versionCode": 4,
+    "versionName": "0.3.1",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Reply-from-Mac hardening: reply actions survive app restarts, empty replies are rejected, and dismissing a notification clears it on the Mac too."
+    "notes": "One-tap updates: Bifrost downloads and installs the newest build in-app — no browser. Plus per-feature permission badges that tell you exactly what to allow and jump to the right settings screen."
   }
 }

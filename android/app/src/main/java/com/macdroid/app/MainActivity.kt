@@ -83,6 +83,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
         )
         ConnectionManager.init(this)
+        // Only on a genuine cold start — a config-change/process-death recreation
+        // passes non-null state, and sweeping then could yank a live download.
+        if (savedInstanceState == null) AppUpdater.sweep(this)
         requestNotificationPermissionIfNeeded()
         handleShareIntent(intent)
 
@@ -152,35 +155,161 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun UpdateBanner() {
+    val context = LocalContext.current
     val update by ConnectionManager.updateAvailable.collectAsState()
+    val phase by AppUpdater.phase.collectAsState()
     val info = update ?: return
     val accent = androidx.compose.ui.graphics.Color(0xFF7D6BFF)
-    Row(
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+    val downloading = phase is AppUpdater.Phase.Downloading
+
+    val title = when (phase) {
+        is AppUpdater.Phase.Downloading -> "Updating — Bifrost ${info.first}"
+        is AppUpdater.Phase.Failed -> "Update failed"
+        else -> "Update available — Bifrost ${info.first}"
+    }
+    val subtitle = when (val p = phase) {
+        is AppUpdater.Phase.Downloading -> "Downloading… ${(p.progress * 100).toInt()}%"
+        is AppUpdater.Phase.NeedsPermission -> p.message
+        is AppUpdater.Phase.Failed -> "${p.message} — tap to retry."
+        else -> "Tap to update in place — Android confirms the install."
+    }
+
+    Column(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, accent.copy(alpha = 0.4f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .background(accent.copy(alpha = 0.12f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .clickable { ConnectionManager.openUpdateUrl() }
+            .border(1.dp, accent.copy(alpha = 0.4f), shape)
+            .background(accent.copy(alpha = 0.12f), shape)
+            .clickable(enabled = !downloading) { AppUpdater.install(context, info.second) }
             .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Update available — Bifrost ${info.first}",
-                color = MdWhite,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-            )
-            Text(
-                "Tap to download the newest build.",
-                color = MdWhite40,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = MdWhite,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                )
+                Text(
+                    subtitle,
+                    color = MdWhite40,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+            Text("↓", color = accent, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
+        }
+        (phase as? AppUpdater.Phase.Downloading)?.let { p ->
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { p.progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = accent,
+                trackColor = accent.copy(alpha = 0.2f),
             )
         }
-        Text("↓", color = accent, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
+        if (phase is AppUpdater.Phase.Failed) {
+            Text(
+                "Get it from the browser instead ↗",
+                color = MdWhite60,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable { ConnectionManager.openUpdateUrl() },
+            )
+        }
     }
 }
+
+/**
+ * Small amber "!" badge shown next to a feature's section label when a
+ * permission that feature needs is missing. Tapping it explains what to allow
+ * and jumps to the exact settings screen.
+ */
+@Composable
+private fun PermissionBadge(need: String, why: String, settingsIntent: Intent) {
+    val context = LocalContext.current
+    var show by remember { mutableStateOf(false) }
+    Box(
+        Modifier
+            .padding(start = 8.dp)
+            .size(18.dp)
+            .border(1.dp, MdAmber.copy(alpha = 0.6f), androidx.compose.foundation.shape.CircleShape)
+            .background(MdAmber.copy(alpha = 0.15f), androidx.compose.foundation.shape.CircleShape)
+            .clickable { show = true },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("!", color = MdAmber, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+    if (show) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { show = false },
+            containerColor = androidx.compose.ui.graphics.Color(0xFF161618),
+            title = {
+                Text(
+                    "$need needed",
+                    color = MdWhite,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 15.sp,
+                )
+            },
+            text = {
+                Text(
+                    why,
+                    color = MdWhite60,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    show = false
+                    context.startActivity(settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) {
+                    Text("Open settings", color = MdWhite, fontFamily = FontFamily.Monospace)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { show = false }) {
+                    Text("Later", color = MdWhite40, fontFamily = FontFamily.Monospace)
+                }
+            },
+        )
+    }
+}
+
+/** Section label with optional trailing permission badge(s). */
+@Composable
+private fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    badges: @Composable () -> Unit = {},
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        SectionLabel(title)
+        badges()
+    }
+}
+
+private fun hasPerm(context: android.content.Context, perm: String) =
+    ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+
+private fun hasPhotosAccess(context: android.content.Context) =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        hasPerm(context, Manifest.permission.READ_MEDIA_IMAGES)
+    else hasPerm(context, Manifest.permission.READ_EXTERNAL_STORAGE)
+
+private fun hasPostNotifications(context: android.content.Context) =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        hasPerm(context, Manifest.permission.POST_NOTIFICATIONS)
+
+/** Settings page for this app (runtime permissions live there). */
+private fun appSettingsIntent(context: android.content.Context) = Intent(
+    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+    Uri.parse("package:${context.packageName}"),
+)
 
 @Composable
 fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
@@ -639,6 +768,27 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         }
     }
 
+    // Permission states for the per-feature warning badges. Polled so a badge
+    // disappears on its own right after the user grants access and comes back.
+    val micGranted by produceState(initialValue = hasPerm(context, Manifest.permission.RECORD_AUDIO)) {
+        while (true) { value = hasPerm(context, Manifest.permission.RECORD_AUDIO); delay(2000) }
+    }
+    val photosGranted by produceState(initialValue = hasPhotosAccess(context)) {
+        while (true) { value = hasPhotosAccess(context); delay(2000) }
+    }
+    val postNotifGranted by produceState(initialValue = hasPostNotifications(context)) {
+        while (true) { value = hasPostNotifications(context); delay(2000) }
+    }
+    val mouseControlOn by produceState(initialValue = RemoteControlService.isEnabled(context)) {
+        while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
+    }
+    val tabWatcherOn by produceState(initialValue = BrowserWatcherService.isEnabled(context)) {
+        while (true) { value = BrowserWatcherService.isEnabled(context); delay(2000) }
+    }
+    val notifAccessOn by produceState(initialValue = NotificationMirrorService.isEnabled(context)) {
+        while (true) { value = NotificationMirrorService.isEnabled(context); delay(2000) }
+    }
+
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -662,7 +812,15 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
-        Entrance(1) { SectionLabel("Clipboard & Files", Modifier.padding(top = 8.dp)) }
+        Entrance(1) {
+            SectionHeader("Clipboard & Files", Modifier.padding(top = 8.dp)) {
+                if (!photosGranted) PermissionBadge(
+                    "Photos access",
+                    "The Mac can browse this phone's gallery and pull photos — that needs the Photos permission. Files you pick by hand still work without it.",
+                    appSettingsIntent(context),
+                )
+            }
+        }
         Entrance(1) {
             DarkCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -709,7 +867,15 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
-        Entrance(3) { SectionLabel("Audio", Modifier.padding(top = 8.dp)) }
+        Entrance(3) {
+            SectionHeader("Audio", Modifier.padding(top = 8.dp)) {
+                if (!micGranted) PermissionBadge(
+                    "Microphone permission",
+                    "\"Use as Mac microphone\" streams your voice to the Mac — allow Microphone for Bifrost to make it work.",
+                    appSettingsIntent(context),
+                )
+            }
+        }
         Entrance(3) {
             DarkCard {
                 GhostPill(
@@ -758,7 +924,18 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
-        Entrance(4) { SectionLabel("Screen", Modifier.padding(top = 8.dp)) }
+        Entrance(4) {
+            // Note: the section's main features (share screen to Mac, view Mac
+            // screen) don't need accessibility — only the optional "mouse control"
+            // does, and that already has its own inline CTA in the card body.
+            SectionHeader("Screen", Modifier.padding(top = 8.dp)) {
+                if (!postNotifGranted) PermissionBadge(
+                    "Notifications permission",
+                    "When the Mac asks to view this phone's screen, the request arrives as a notification — allow Notifications for Bifrost or you won't see it.",
+                    appSettingsIntent(context),
+                )
+            }
+        }
         Entrance(4) {
             DarkCard {
                 GhostPill(
@@ -785,10 +962,7 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
                 GhostPill("View Mac screen here", Modifier.fillMaxWidth()) {
                     ConnectionManager.requestMacScreen()
                 }
-                val controlEnabled by produceState(initialValue = RemoteControlService.isEnabled(context)) {
-                    while (true) { value = RemoteControlService.isEnabled(context); delay(2000) }
-                }
-                if (controlEnabled) {
+                if (mouseControlOn) {
                     Text(
                         "✓ Mouse control enabled — click the Mac window to tap, drag to swipe.",
                         color = MdWhite40,
@@ -806,11 +980,27 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
-        Entrance(5) { SectionLabel("Tab Sync", Modifier.padding(top = 8.dp)) }
-        Entrance(5) { TabSyncCard() }
+        Entrance(5) {
+            SectionHeader("Tab Sync", Modifier.padding(top = 8.dp)) {
+                if (!tabWatcherOn) PermissionBadge(
+                    "Accessibility service",
+                    "Sending the page you're browsing to the Mac's menu bar needs the Bifrost tab-sync accessibility service. Turn on \"Bifrost tab sync\".",
+                    Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                )
+            }
+        }
+        Entrance(5) { TabSyncCard(watcherEnabled = tabWatcherOn) }
 
-        Entrance(5) { SectionLabel("Notifications", Modifier.padding(top = 8.dp)) }
-        Entrance(5) { NotificationsCard() }
+        Entrance(5) {
+            SectionHeader("Notifications", Modifier.padding(top = 8.dp)) {
+                if (!notifAccessOn) PermissionBadge(
+                    "Notification access",
+                    "Mirroring notifications to the Mac and showing Now Playing both need Notification access for Bifrost.",
+                    Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                )
+            }
+        }
+        Entrance(5) { NotificationsCard(accessGranted = notifAccessOn) }
 
         Entrance(6) {
             Row(
@@ -839,18 +1029,9 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
 }
 
 @Composable
-private fun TabSyncCard() {
+private fun TabSyncCard(watcherEnabled: Boolean) {
     val context = LocalContext.current
     val macTab by ConnectionManager.macTab.collectAsState()
-
-    val watcherEnabled by produceState(
-        initialValue = BrowserWatcherService.isEnabled(context)
-    ) {
-        while (true) {
-            value = BrowserWatcherService.isEnabled(context)
-            delay(2000)
-        }
-    }
 
     DarkCard {
         macTab?.let { (url, title) ->
@@ -893,15 +1074,9 @@ private fun TabSyncCard() {
 }
 
 @Composable
-private fun NotificationsCard() {
+private fun NotificationsCard(accessGranted: Boolean) {
     val context = LocalContext.current
     val mirroring by ConnectionManager.mirrorNotifications.collectAsState()
-    val accessGranted by produceState(initialValue = NotificationMirrorService.isEnabled(context)) {
-        while (true) {
-            value = NotificationMirrorService.isEnabled(context)
-            delay(2000)
-        }
-    }
 
     DarkCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
