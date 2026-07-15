@@ -71,8 +71,8 @@
 
   /* Fade-up on scroll (whileInView equivalent) */
   [data-inview] {
-    opacity: 0; transform: translateY(30px);
-    transition: opacity 1s cubic-bezier(0.215,0.61,0.355,1), transform 1s cubic-bezier(0.215,0.61,0.355,1);
+    opacity: 0; transform: translateY(20px);
+    transition: opacity 0.45s cubic-bezier(0.215,0.61,0.355,1), transform 0.45s cubic-bezier(0.215,0.61,0.355,1);
     transition-delay: var(--d, 0ms);
   }
   [data-inview].in-view { opacity: 1; transform: translateY(0); }
@@ -751,8 +751,19 @@
     entries.forEach(entry => {
       if (entry.isIntersecting) { entry.target.classList.add('in-view'); io.unobserve(entry.target); }
     });
-  }, { threshold: 0.3 });
+  }, { threshold: 0, rootMargin: '0px 0px 400px 0px' });
   document.querySelectorAll('[data-inview]').forEach(el => io.observe(el));
+
+  // Fallback so text never gets stuck invisible: reveal anything near the
+  // viewport on load and while scrolling, independent of the observer.
+  function revealNear() {
+    document.querySelectorAll('[data-inview]:not(.in-view)').forEach(el => {
+      if (el.getBoundingClientRect().top < window.innerHeight + 400) el.classList.add('in-view');
+    });
+  }
+  window.addEventListener('scroll', revealNear, { passive: true });
+  window.addEventListener('load', revealNear);
+  revealNear();
 
 </script>
 
