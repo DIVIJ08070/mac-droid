@@ -16,10 +16,12 @@ final class SystemAudioSender: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
     private var listener: NWListener?
     private var connection: NWConnection?
+    private var cipher: CryptoBox? // non-nil → AES-GCM encrypt the PCM stream
     private let audioQueue = DispatchQueue(label: "macdroid.audio.capture")
 
     /// Starts capture + listener; calls `offer` with the side-channel port once ready.
-    func start(offer: @escaping @MainActor (Int) -> Void) {
+    func start(cipher: CryptoBox? = nil, offer: @escaping @MainActor (Int) -> Void) {
+        self.cipher = cipher
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -93,7 +95,8 @@ final class SystemAudioSender: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, let connection, sampleBuffer.isValid else { return }
         guard let pcm16 = Self.interleavedPCM16(from: sampleBuffer) else { return }
-        connection.send(content: pcm16, completion: .contentProcessed { _ in })
+        let payload = cipher.map { SideChannelCrypto.sealRecord($0, pcm16) ?? pcm16 } ?? pcm16
+        connection.send(content: payload, completion: .contentProcessed { _ in })
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

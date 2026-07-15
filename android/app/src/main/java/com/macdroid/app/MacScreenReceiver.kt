@@ -23,6 +23,7 @@ class MacScreenReceiver(
     private val width: Int,
     private val height: Int,
     private val surface: Surface,
+    private val cipher: CryptoBox?, // non-null → AES-GCM decrypt the H.264 stream
     private val onLog: (String) -> Unit,
     private val onStopped: () -> Unit,
 ) {
@@ -47,7 +48,8 @@ class MacScreenReceiver(
                     s.connect(InetSocketAddress(host, port), 10000)
                     s.tcpNoDelay = true
                     onLog("Receiving Mac screen")
-                    val input = s.getInputStream()
+                    val input = if (cipher != null) EncInputStream(s.getInputStream(), cipher)
+                                else s.getInputStream()
                     val buffer = ByteArray(256 * 1024)
                     val pending = ArrayDeque<Byte>() // rolling byte buffer for NAL splitting
                     var acc = ByteArray(0)

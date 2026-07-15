@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "tmj-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--prefix", "/Users/mac/Desktop/tmj/TMJ_Web"],
+      "port": 3000
+    },
+    {
       "name": "website",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.3.1",
+    "version": "1.4.1",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Permission badges: any feature that needs a macOS permission now shows a warning you can hover and click to fix, so nothing silently fails. Plus the safer one-click self-updater."
+    "notes": "Encrypted transfers: files, photos, screen mirroring and audio are now end-to-end encrypted. New Sync Folder mirrors a folder with your phone (a private Dropbox). Plus a fresh animated splash."
   },
   "android": {
-    "versionCode": 4,
-    "versionName": "0.3.1",
+    "versionCode": 6,
+    "versionName": "0.4.1",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "One-tap updates: Bifrost downloads and installs the newest build in-app — no browser. Plus per-feature permission badges that tell you exactly what to allow and jump to the right settings screen."
+    "notes": "Encrypted transfers for files, photos, screen and audio. New Sync Folder mirrors “Bifrost Sync” on your phone with a folder on the Mac — both ways. Plus a fresh animated splash."
   }
 }

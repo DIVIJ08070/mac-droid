@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import Network
 
@@ -8,7 +9,12 @@ final class ServerManager: ObservableObject {
     @Published var port: UInt16?
     @Published var connectedDeviceName: String?
     @Published var pendingPairCode: String?
-    @Published var isPaired = false
+    @Published var isPaired = false {
+        didSet {
+            if isPaired && !oldValue { syncFolder.start() }
+            else if !isPaired && oldValue { syncFolder.stop() }
+        }
+    }
     @Published var lastReceivedClipboard: String?
     @Published var autoSyncClipboard = true
     @Published var transferStatus: String?
@@ -55,6 +61,8 @@ final class ServerManager: ObservableObject {
     @Published var fsNeedsPermission = false
 
     let micReceiver = MicReceiver()
+    let syncFolder = SyncFolderManager()
+    private var syncCancellable: AnyCancellable?
     private let inputController = InputController()
     private let screenViewer = ScreenViewer()
     private var macScreenSender: MacScreenSender?
@@ -71,6 +79,8 @@ final class ServerManager: ObservableObject {
     // Per-connection encryption: ECDH key exchange, then AES-GCM on every packet.
     private var crypto = CryptoBox()
     private var handshakeDone = false
+    /// Whether the paired phone can encrypt side-channel byte transfers.
+    private var peerEncSideChannels = false
 
     static let fixedPort: UInt16 = 52377
 
@@ -98,6 +108,23 @@ final class ServerManager: ObservableObject {
             self.appendLog("Reply → phone: \(text)")
         }
         Notifier.shared.requestAuthorization()
+
+        // Folder sync: broadcast our manifest / pull files over the control channel.
+        if syncCancellable == nil {
+            syncCancellable = syncFolder.objectWillChange.sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+        }
+        syncFolder.onLog = { [weak self] message in self?.appendLog(message) }
+        syncFolder.sendManifestPacket = { [weak self] files in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: "sync.manifest", body: ["files": files]))
+        }
+        syncFolder.requestPull = { [weak self] rel in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: "sync.pull", body: ["p": rel]))
+        }
+
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
         screenViewer.onLog = { [weak self] message in self?.appendLog(message) }
@@ -187,6 +214,7 @@ final class ServerManager: ObservableObject {
         buffer = Data()
         crypto = CryptoBox()
         handshakeDone = false
+        peerEncSideChannels = false
         appendLog("Incoming connection from \(newConnection.endpoint)")
 
         newConnection.stateUpdateHandler = { [weak self, weak newConnection] state in
@@ -244,7 +272,7 @@ final class ServerManager: ObservableObject {
                 handshakeDone = true
                 statusText = "Encrypted — waiting for pairing"
                 appendLog("Secure channel established (AES-256-GCM)")
-                send(Packet(type: "identity", body: ["name": deviceName, "device": "mac"]))
+                send(Packet(type: "identity", body: ["name": deviceName, "device": "mac", "enc": true]))
                 continue
             }
             guard let base64 = String(data: line, encoding: .utf8),
@@ -267,7 +295,9 @@ final class ServerManager: ObservableObject {
         switch packet.type {
         case "identity":
             connectedDeviceName = packet.body["name"] as? String ?? "Android device"
-            appendLog("Identified: \(connectedDeviceName!)")
+            // Peer advertises whether it can encrypt side-channel transfers.
+            peerEncSideChannels = packet.body["enc"] as? Bool ?? false
+            appendLog("Identified: \(connectedDeviceName!)\(peerEncSideChannels ? " · secure transfers" : "")")
 
         case "pair.request":
             handlePairRequest(packet)
@@ -367,7 +397,8 @@ final class ServerManager: ObservableObject {
             else { return }
             let sampleRate = packet.body["sampleRate"] as? Double ?? 16000
             let channels = packet.body["channels"] as? Int ?? 1
-            micReceiver.start(host: host, port: UInt16(port), sampleRate: sampleRate, channels: channels)
+            let micEnc = (packet.body["enc"] as? Bool) ?? false
+            micReceiver.start(host: host, port: UInt16(port), sampleRate: sampleRate, channels: channels, cipher: micEnc ? crypto : nil)
 
         case "audio.stop":
             if packet.body["direction"] as? String == "mic" {
@@ -381,7 +412,8 @@ final class ServerManager: ObservableObject {
                   let port = packet.body["port"] as? Int,
                   let host = remoteHost()
             else { return }
-            screenViewer.start(host: host, port: UInt16(port), width: width, height: height)
+            let scrEnc = (packet.body["enc"] as? Bool) ?? false
+            screenViewer.start(host: host, port: UInt16(port), width: width, height: height, cipher: scrEnc ? crypto : nil)
             screenViewing = true
             appendLog("Viewing phone screen (\(width)×\(height))")
 
@@ -406,7 +438,8 @@ final class ServerManager: ObservableObject {
                 galleryLoading = false
                 return
             }
-            receiveGalleryThumbs(host: host, port: UInt16(port), items: parsed)
+            let galEnc = (packet.body["enc"] as? Bool) ?? false
+            receiveGalleryThumbs(host: host, port: UInt16(port), items: parsed, enc: galEnc)
 
         case "fs.entries":
             guard isPaired else { return }
@@ -431,7 +464,10 @@ final class ServerManager: ObservableObject {
                   let host = remoteHost()
             else { return }
             let isPull = (packet.body["pull"] as? Bool) ?? false
-            receiveFile(name: name, size: size, host: host, port: UInt16(port), pull: isPull)
+            let enc = (packet.body["enc"] as? Bool) ?? false
+            let syncRel = (packet.body["sync"] as? Bool) == true ? (packet.body["p"] as? String) : nil
+            let mtime = (packet.body["mtime"] as? NSNumber)?.int64Value
+            receiveFile(name: name, size: size, host: host, port: UInt16(port), pull: isPull, enc: enc, syncRel: syncRel, syncMtime: mtime)
 
         case "clipboard.image":
             guard isPaired,
@@ -440,11 +476,29 @@ final class ServerManager: ObservableObject {
                   let port = packet.body["port"] as? Int,
                   let host = remoteHost()
             else { return }
-            receiveFile(name: name, size: size, host: host, port: UInt16(port), clipboardImage: true)
+            let enc = (packet.body["enc"] as? Bool) ?? false
+            receiveFile(name: name, size: size, host: host, port: UInt16(port), clipboardImage: true, enc: enc)
+
+        case "sync.manifest":
+            guard isPaired else { return }
+            let files = packet.body["files"] as? [[String: Any]] ?? []
+            syncFolder.applyRemoteManifest(files)
+
+        case "sync.pull":
+            guard isPaired, let rel = packet.body["p"] as? String else { return }
+            sendSyncFile(rel: rel)
 
         default:
             appendLog("Unknown packet: \(packet.type)")
         }
+    }
+
+    /// Send a file from our sync folder to the phone, tagged so it lands in the
+    /// phone's sync folder with our modification time preserved.
+    private func sendSyncFile(rel: String) {
+        guard let url = SyncFolderManager.sanitize(rel, under: syncFolder.folderURL),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        sendFile(url: url, syncRel: rel)
     }
 
     // MARK: - Pairing
@@ -824,9 +878,12 @@ final class ServerManager: ObservableObject {
             self?.macScreenSender = nil
             self?.mirroringToPhone = false
         }
-        sender.start { [weak self] width, height, port in
+        let enc = peerEncSideChannels && crypto.isReady
+        sender.start(cipher: enc ? crypto : nil) { [weak self] width, height, port in
             guard let self else { return }
-            self.send(Packet(type: "macscreen.start", body: ["width": width, "height": height, "port": port]))
+            var body: [String: Any] = ["width": width, "height": height, "port": port]
+            if enc { body["enc"] = true }
+            self.send(Packet(type: "macscreen.start", body: body))
             self.mirroringToPhone = true
             self.appendLog("Mirroring Mac screen to phone (\(width)×\(height))")
         }
@@ -869,14 +926,17 @@ final class ServerManager: ObservableObject {
             self?.audioSender = nil
             self?.speakerStreaming = false
         }
-        sender.start { [weak self] port in
+        let enc = peerEncSideChannels && crypto.isReady
+        sender.start(cipher: enc ? crypto : nil) { [weak self] port in
             guard let self else { return }
-            self.send(Packet(type: "audio.start", body: [
+            var body: [String: Any] = [
                 "direction": "speaker",
                 "sampleRate": SystemAudioSender.sampleRate,
                 "channels": SystemAudioSender.channels,
                 "port": port,
-            ]))
+            ]
+            if enc { body["enc"] = true }
+            self.send(Packet(type: "audio.start", body: body))
             self.speakerStreaming = true
             self.appendLog("Streaming Mac audio to phone")
         }
@@ -1020,7 +1080,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - File transfer: sending (Mac → phone)
 
-    func sendFile(url: URL, toDir dir: String? = nil) {
+    func sendFile(url: URL, toDir dir: String? = nil, syncRel: String? = nil) {
         guard isPaired else { return }
         let name = url.lastPathComponent
         guard
@@ -1031,13 +1091,15 @@ final class ServerManager: ObservableObject {
             appendLog("Cannot read \(name)")
             return
         }
+        let mtimeMs = (attributes[.modificationDate] as? Date).map { Int64($0.timeIntervalSince1970 * 1000) }
+        let enc = peerEncSideChannels && crypto.isReady
 
         do {
             let fileListener = try NWListener(using: .tcp)
             fileListener.newConnectionHandler = { [weak self] transferConnection in
                 transferConnection.start(queue: .main)
                 Task { @MainActor in
-                    self?.stream(handle: handle, name: name, size: size, over: transferConnection, listener: fileListener)
+                    self?.stream(handle: handle, name: name, size: size, over: transferConnection, listener: fileListener, enc: enc)
                 }
             }
             fileListener.stateUpdateHandler = { [weak self] state in
@@ -1048,6 +1110,8 @@ final class ServerManager: ObservableObject {
                         guard let filePort = fileListener.port?.rawValue else { return }
                         var offer: [String: Any] = ["name": name, "size": size, "port": Int(filePort)]
                         if let dir { offer["dir"] = dir }
+                        if enc { offer["enc"] = true }
+                        if let syncRel { offer["sync"] = true; offer["p"] = syncRel; if let mtimeMs { offer["mtime"] = mtimeMs } }
                         self.send(Packet(type: "file.offer", body: offer))
                         self.transferStatus = "Sending \(name)…"
                         self.appendLog("Offering \(name) (\(Self.formatBytes(size))) on port \(filePort)")
@@ -1065,12 +1129,12 @@ final class ServerManager: ObservableObject {
         }
     }
 
-    private func stream(handle: FileHandle, name: String, size: Int, over transferConnection: NWConnection, listener fileListener: NWListener) {
+    private func stream(handle: FileHandle, name: String, size: Int, over transferConnection: NWConnection, listener fileListener: NWListener, enc: Bool = false) {
         var sent = 0
 
         func sendNextChunk() {
-            let chunk = handle.readData(ofLength: 65536)
-            if chunk.isEmpty {
+            let plainChunk = handle.readData(ofLength: 65536)
+            if plainChunk.isEmpty {
                 transferConnection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
                     Task { @MainActor in
                         transferConnection.cancel()
@@ -1082,6 +1146,8 @@ final class ServerManager: ObservableObject {
                 try? handle.close()
                 return
             }
+            // Encrypt into a framed record when negotiated; else send raw as before.
+            let chunk = enc ? (SideChannelCrypto.sealRecord(crypto, plainChunk) ?? plainChunk) : plainChunk
             transferConnection.send(content: chunk, completion: .contentProcessed { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
@@ -1093,7 +1159,7 @@ final class ServerManager: ObservableObject {
                         try? handle.close()
                         return
                     }
-                    sent += chunk.count
+                    sent += plainChunk.count // progress is over plaintext, not the sealed size
                     self.transferStatus = "Sending \(name)… \(Self.percent(sent, of: size))"
                     sendNextChunk()
                 }
@@ -1112,14 +1178,32 @@ final class ServerManager: ObservableObject {
         return host
     }
 
-    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16, pull: Bool = false, clipboardImage: Bool = false) {
+    private func receiveFile(name: String, size: Int, host: NWEndpoint.Host, port: UInt16, pull: Bool = false, clipboardImage: Bool = false, enc: Bool = false, syncRel: String? = nil, syncMtime: Int64? = nil) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
-        // Pulled files (drag-out) and clipboard images go to a temp dir; normal
+        let decryptor = enc ? FramedDecryptor(crypto) : nil
+
+        // Sync files write atomically (".part" then rename) into the sync folder
+        // at their relative path; pulls/clipboard images use a temp dir; normal
         // transfers land in Downloads.
-        let directory = (pull || clipboardImage)
-            ? FileManager.default.temporaryDirectory
-            : FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let destination = Self.uniqueDestination(in: directory, name: Self.sanitize(name))
+        let syncFinalDest: URL?
+        let destination: URL
+        if let syncRel {
+            guard let dest = SyncFolderManager.sanitize(syncRel, under: syncFolder.folderURL) else {
+                appendLog("Sync: refused unsafe path \(syncRel)")
+                syncFolder.pullFinished(syncRel, success: false)
+                return
+            }
+            try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            syncFinalDest = dest
+            destination = dest.appendingPathExtension("part")
+            try? FileManager.default.removeItem(at: destination)
+        } else {
+            syncFinalDest = nil
+            let directory = (pull || clipboardImage)
+                ? FileManager.default.temporaryDirectory
+                : FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            destination = Self.uniqueDestination(in: directory, name: Self.sanitize(name))
+        }
 
         FileManager.default.createFile(atPath: destination.path, contents: nil)
         guard let handle = try? FileHandle(forWritingTo: destination) else {
@@ -1140,6 +1224,28 @@ final class ServerManager: ObservableObject {
             try? handle.close()
             transferConnection.cancel()
             transferStatus = nil
+            if let syncFinalDest, let syncRel {
+                if success {
+                    syncFolder.backupBeforeOverwrite(syncFinalDest) // keep the old copy recoverable
+                    do {
+                        try FileManager.default.moveItem(at: destination, to: syncFinalDest)
+                        if let syncMtime {
+                            try? FileManager.default.setAttributes(
+                                [.modificationDate: Date(timeIntervalSince1970: Double(syncMtime) / 1000)],
+                                ofItemAtPath: syncFinalDest.path)
+                        }
+                        appendLog("Sync ← \(syncRel)")
+                        syncFolder.pullFinished(syncRel, success: true)
+                    } catch {
+                        try? FileManager.default.removeItem(at: destination)
+                        syncFolder.pullFinished(syncRel, success: false)
+                    }
+                } else {
+                    try? FileManager.default.removeItem(at: destination)
+                    syncFolder.pullFinished(syncRel, success: false)
+                }
+                return
+            }
             if success {
                 if pull {
                     appendLog("Pulled \(name) from phone")
@@ -1171,8 +1277,21 @@ final class ServerManager: ObservableObject {
             transferConnection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
                 Task { @MainActor in
                     if let data, !data.isEmpty {
-                        handle.write(data)
-                        received += data.count
+                        if let decryptor {
+                            // Decrypt framed records; a nil result means corrupt/forged data.
+                            guard let plain = decryptor.feed(data) else {
+                                self.appendLog("Secure transfer of \(name) failed (bad data)")
+                                finish(success: false)
+                                return
+                            }
+                            if !plain.isEmpty {
+                                handle.write(plain)
+                                received += plain.count
+                            }
+                        } else {
+                            handle.write(data)
+                            received += data.count
+                        }
                         self.transferStatus = "Receiving \(name)… \(Self.percent(received, of: size))"
                     }
                     if received >= size {
@@ -1281,9 +1400,10 @@ final class ServerManager: ObservableObject {
         }
     }
 
-    private func receiveGalleryThumbs(host: NWEndpoint.Host, port: UInt16, items: [(Int, String)]) {
+    private func receiveGalleryThumbs(host: NWEndpoint.Host, port: UInt16, items: [(Int, String)], enc: Bool = false) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { galleryLoading = false; return }
         let conn = NWConnection(host: host, port: nwPort, using: .tcp)
+        let decryptor = enc ? FramedDecryptor(crypto) : nil
         var buffer = Data()
         var index = 0
 
@@ -1309,7 +1429,19 @@ final class ServerManager: ObservableObject {
         func loop() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 262144) { data, _, isComplete, error in
                 Task { @MainActor in
-                    if let data, !data.isEmpty { buffer.append(data); drain() }
+                    if let data, !data.isEmpty {
+                        if let decryptor {
+                            guard let plain = decryptor.feed(data) else {
+                                self.galleryLoading = false
+                                conn.cancel()
+                                return
+                            }
+                            buffer.append(plain)
+                        } else {
+                            buffer.append(data)
+                        }
+                        drain()
+                    }
                     if index >= items.count { return }
                     if isComplete || error != nil {
                         self.galleryLoading = false

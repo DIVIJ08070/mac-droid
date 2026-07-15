@@ -8,6 +8,7 @@ struct ContentView: View {
     @ObservedObject private var perms = PermissionMonitor.shared
     @State private var isDropTargeted = false
     @State private var showDesktopGuide = false
+    @State private var showSplash = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     private var macName: String {
@@ -28,6 +29,12 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
                 .zIndex(1)
+            }
+
+            if showSplash {
+                SplashView { showSplash = false }
+                    .transition(.opacity)
+                    .zIndex(2)
             }
         }
         .frame(minWidth: 640, minHeight: 640)
@@ -321,6 +328,64 @@ struct ContentView: View {
                 audioCard
                 remoteCard
             }
+            syncCard
+        }
+    }
+
+    private var syncCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                cardHeader("Sync Folder", icon: "arrow.triangle.2.circlepath")
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { server.syncFolder.enabled },
+                    set: { on in
+                        server.syncFolder.enabled = on
+                        if on { server.syncFolder.start() } else { server.syncFolder.stop() }
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(Color.white.opacity(0.4))
+            }
+            Text("Mirrors a folder here with the “Bifrost Sync” folder on your phone — both ways, newest wins. Nothing is deleted by sync.")
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.faint)
+                .lineSpacing(3)
+            HStack(spacing: 8) {
+                Text(server.syncFolder.folderPath)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("Choose…") { chooseSyncFolder() }
+                    .buttonStyle(PillButtonStyle(kind: .secondary, size: 10))
+                Button("Open") {
+                    server.syncFolder.ensureFolder()
+                    NSWorkspace.shared.open(server.syncFolder.folderURL)
+                }
+                .buttonStyle(PillButtonStyle(kind: .secondary, size: 10))
+            }
+            if server.syncFolder.enabled, !server.syncFolder.status.isEmpty {
+                Text("✓ \(server.syncFolder.status)")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.faint)
+            }
+        }
+        .card()
+    }
+
+    private func chooseSyncFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        if panel.runModal() == .OK, let url = panel.url {
+            server.syncFolder.folderPath = url.path
+            if server.syncFolder.enabled { server.syncFolder.start() }
         }
     }
 

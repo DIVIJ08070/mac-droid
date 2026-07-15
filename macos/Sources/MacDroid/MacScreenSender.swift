@@ -18,8 +18,10 @@ final class MacScreenSender: NSObject, SCStreamOutput, SCStreamDelegate {
     private var width = 0
     private var height = 0
     private var frameIndex: Int64 = 0
+    private var cipher: CryptoBox? // non-nil → AES-GCM encrypt the H.264 stream
 
-    func start(offer: @escaping @MainActor (_ width: Int, _ height: Int, _ port: Int) -> Void) {
+    func start(cipher: CryptoBox? = nil, offer: @escaping @MainActor (_ width: Int, _ height: Int, _ port: Int) -> Void) {
+        self.cipher = cipher
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -190,7 +192,8 @@ final class MacScreenSender: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         if !output.isEmpty {
-            connection.send(content: output, completion: .contentProcessed { _ in })
+            let payload = cipher.map { SideChannelCrypto.sealRecord($0, output) ?? output } ?? output
+            connection.send(content: payload, completion: .contentProcessed { _ in })
         }
     }
 

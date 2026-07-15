@@ -28,11 +28,13 @@ final class ScreenViewer: NSObject {
     private var pps: Data?
     private var buffer = Data()
     private var active = false
+    private var decryptor: FramedDecryptor?
 
-    func start(host: NWEndpoint.Host, port: UInt16, width: Int, height: Int) {
+    func start(host: NWEndpoint.Host, port: UInt16, width: Int, height: Int, cipher: CryptoBox? = nil) {
         stop()
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
         active = true
+        decryptor = cipher.map { FramedDecryptor($0) }
         openWindow(width: width, height: height)
 
         let conn = NWConnection(host: host, port: nwPort, using: .tcp)
@@ -128,8 +130,13 @@ final class ScreenViewer: NSObject {
             Task { @MainActor in
                 guard let self, self.connection === conn else { return }
                 if let data, !data.isEmpty {
-                    self.buffer.append(data)
-                    self.drainNALUnits()
+                    if let decryptor = self.decryptor {
+                        guard let plain = decryptor.feed(data) else { self.stop(); return }
+                        if !plain.isEmpty { self.buffer.append(plain); self.drainNALUnits() }
+                    } else {
+                        self.buffer.append(data)
+                        self.drainNALUnits()
+                    }
                 }
                 if isComplete || error != nil {
                     self.stop()

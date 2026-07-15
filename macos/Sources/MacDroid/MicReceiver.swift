@@ -21,12 +21,13 @@ final class MicReceiver: ObservableObject {
     private var format: AVAudioFormat?
     private var leftover = Data()
     private var channels = 1
+    private var decryptor: FramedDecryptor?
 
     func refreshDevices() {
         outputDevices = AudioDevices.outputDevices()
     }
 
-    func start(host: NWEndpoint.Host, port: UInt16, sampleRate: Double, channels: Int) {
+    func start(host: NWEndpoint.Host, port: UInt16, sampleRate: Double, channels: Int, cipher: CryptoBox? = nil) {
         stop()
         guard let nwPort = NWEndpoint.Port(rawValue: port),
               let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: AVAudioChannelCount(channels))
@@ -34,6 +35,7 @@ final class MicReceiver: ObservableObject {
 
         self.format = format
         self.channels = channels
+        self.decryptor = cipher.map { FramedDecryptor($0) }
         refreshDevices()
 
         if !playerAttached {
@@ -117,7 +119,12 @@ final class MicReceiver: ObservableObject {
             Task { @MainActor in
                 guard let self, self.connection === conn else { return }
                 if let data, !data.isEmpty {
-                    self.playChunk(data)
+                    if let decryptor = self.decryptor {
+                        guard let plain = decryptor.feed(data) else { self.stop(); return }
+                        if !plain.isEmpty { self.playChunk(plain) }
+                    } else {
+                        self.playChunk(data)
+                    }
                 }
                 if isComplete || error != nil {
                     self.stop()

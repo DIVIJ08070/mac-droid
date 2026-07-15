@@ -25,6 +25,7 @@ import java.net.ServerSocket
 class ScreenStreamer(
     private val context: Context,
     private val scope: CoroutineScope,
+    private val cipher: CryptoBox?, // non-null → AES-GCM encrypt the H.264 stream
     private val onOffer: (width: Int, height: Int, port: Int) -> Unit,
     private val onLog: (String) -> Unit,
     private val onStopped: () -> Unit,
@@ -93,7 +94,8 @@ class ScreenStreamer(
                     serverSocket.accept().use { client ->
                         client.tcpNoDelay = true
                         onLog("Screen streaming to Mac")
-                        val out = client.getOutputStream()
+                        val out = if (cipher != null) EncOutputStream(client.getOutputStream(), cipher)
+                                  else client.getOutputStream()
                         val info = MediaCodec.BufferInfo()
                         val chunk = ByteArray(256 * 1024)
                         while (running) {

@@ -20,6 +20,7 @@ import java.net.Socket
  */
 class MicStreamer(
     private val scope: CoroutineScope,
+    private val cipher: CryptoBox?, // non-null → AES-GCM encrypt the PCM stream
     private val onOffer: (sampleRate: Int, channels: Int, port: Int) -> Unit,
     private val onLog: (String) -> Unit,
     private val onStopped: () -> Unit,
@@ -54,7 +55,8 @@ class MicStreamer(
                     serverSocket.accept().use { client ->
                         onLog("Mic streaming to Mac")
                         client.tcpNoDelay = true
-                        val out = client.getOutputStream()
+                        val out = if (cipher != null) EncOutputStream(client.getOutputStream(), cipher)
+                                  else client.getOutputStream()
                         val buffer = ByteArray(3200) // 100 ms at 16 kHz mono PCM16
                         record.startRecording()
                         if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
@@ -151,7 +153,7 @@ class SpeakerPlayer(
 
     val isRunning get() = running
 
-    fun start(host: String, port: Int, sampleRate: Int, channels: Int) {
+    fun start(host: String, port: Int, sampleRate: Int, channels: Int, cipher: CryptoBox?) {
         stop()
         running = true
 
@@ -186,7 +188,8 @@ class SpeakerPlayer(
                     socket = s
                     s.connect(InetSocketAddress(host, port), 10000)
                     onLog("Playing Mac audio on this phone")
-                    val input = s.getInputStream()
+                    val input = if (cipher != null) EncInputStream(s.getInputStream(), cipher)
+                                else s.getInputStream()
                     val buffer = ByteArray(19200) // 50 ms at 48 kHz stereo PCM16
                     while (running) {
                         val n = input.read(buffer)

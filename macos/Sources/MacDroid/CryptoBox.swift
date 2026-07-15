@@ -48,4 +48,25 @@ final class CryptoBox {
         else { return nil }
         return plaintext
     }
+
+    // MARK: - Raw (binary) sealing for side channels
+    //
+    // Same key and AES-256-GCM construction as the control channel, but returns
+    // raw bytes (nonce ‖ ciphertext ‖ tag) instead of base64 — used to frame
+    // file/screen/audio/gallery side-channel transfers without base64 bloat.
+
+    /// Encrypt raw bytes → Data(nonce ‖ ciphertext ‖ tag), or nil if no key.
+    func sealRaw(_ plaintext: Data) -> Data? {
+        guard let key, let box = try? AES.GCM.seal(plaintext, using: key) else { return nil }
+        return box.combined
+    }
+
+    /// Data(nonce ‖ ciphertext ‖ tag) → plaintext, or nil on failure/no key.
+    func openRaw(_ data: Data) -> Data? {
+        guard let key,
+              let box = try? AES.GCM.SealedBox(combined: data),
+              let plaintext = try? AES.GCM.open(box, using: key)
+        else { return nil }
+        return plaintext
+    }
 }

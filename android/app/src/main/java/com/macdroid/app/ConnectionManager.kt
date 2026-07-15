@@ -22,6 +22,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -43,6 +44,8 @@ object ConnectionManager {
     private var writer: PrintWriter? = null
     private var crypto = CryptoBox()
     @Volatile private var handshakeDone = false
+    /// Whether the paired Mac can encrypt side-channel byte transfers.
+    @Volatile private var peerEncSideChannels = false
     private lateinit var appContext: Context
 
     // Incremented on every connect/disconnect; a connection attempt that finds the
@@ -86,6 +89,7 @@ object ConnectionManager {
     private var screenStreamer: ScreenStreamer? = null
     private var macScreenReceiver: MacScreenReceiver? = null
     private var pendingMacScreen: Triple<String, Int, Pair<Int, Int>>? = null
+    @Volatile private var pendingMacScreenEnc = false
     private var macScreenSurface: android.view.Surface? = null
 
     private val _screenSharing = MutableStateFlow(false)
@@ -102,8 +106,12 @@ object ConnectionManager {
     private val inputChannel =
         Channel<Packet>(capacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
+    lateinit var syncFolder: SyncFolderManager
+        private set
+
     fun init(context: Context) {
         appContext = context.applicationContext
+        if (!::syncFolder.isInitialized) syncFolder = SyncFolderManager(appContext)
         createNotificationChannel()
         checkForUpdate()
         _mirrorNotifications.value =
@@ -330,6 +338,7 @@ object ConnectionManager {
                     writer = PrintWriter(s.getOutputStream(), true)
                     crypto = newCrypto
                     handshakeDone = false
+                    peerEncSideChannels = false
                 }
 
                 val reader = BufferedReader(InputStreamReader(s.getInputStream()))
@@ -344,6 +353,7 @@ object ConnectionManager {
                 send(Packet("identity", JSONObject().apply {
                     put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
                     put("device", "android")
+                    put("enc", true) // we can encrypt side-channel transfers
                 }))
 
                 sendPairRequest(mac)
@@ -419,6 +429,9 @@ object ConnectionManager {
         _micStreaming.value = false
         stopSpeaker()
         stopScreenShare(notifyMac = false)
+        syncJob?.cancel()
+        syncJob = null
+        if (::syncFolder.isInitialized) syncFolder.reset()
         heartbeatJob?.cancel()
         heartbeatJob = null
         connectionJob?.cancel()
@@ -484,6 +497,7 @@ object ConnectionManager {
                         if (si >= 0) size = c.getLong(si)
                     }
                 }
+                val enc = sideChannelEnc()
                 if (size < 0) { // not all providers report size — read into memory
                     val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
                     size = bytes.size.toLong()
@@ -491,8 +505,17 @@ object ConnectionManager {
                         server.soTimeout = 15000
                         send(Packet("clipboard.image", JSONObject().apply {
                             put("name", name); put("size", size); put("port", server.localPort)
+                            if (enc) put("enc", true)
                         }))
-                        server.accept().use { it.getOutputStream().apply { write(bytes); flush() } }
+                        server.accept().use { client ->
+                            val out = encOutput(client, enc)
+                            var off = 0
+                            while (off < bytes.size) {
+                                val n = minOf(65536, bytes.size - off)
+                                out.write(bytes, off, n); off += n
+                            }
+                            out.flush()
+                        }
                     }
                     appendLog("Image → Mac clipboard")
                     return@launch
@@ -501,10 +524,11 @@ object ConnectionManager {
                     server.soTimeout = 15000
                     send(Packet("clipboard.image", JSONObject().apply {
                         put("name", name); put("size", size); put("port", server.localPort)
+                        if (enc) put("enc", true)
                     }))
                     server.accept().use { client ->
                         resolver.openInputStream(uri)?.use { input ->
-                            val out = client.getOutputStream(); val buf = ByteArray(65536)
+                            val out = encOutput(client, enc); val buf = ByteArray(65536)
                             while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n) }
                             out.flush()
                         }
@@ -521,6 +545,81 @@ object ConnectionManager {
         scope.launch {
             send(Packet("ping", JSONObject().put("message", "Ping from phone")))
             appendLog("Ping → Mac")
+        }
+    }
+
+    // ----- Folder sync -----
+    private var syncJob: kotlinx.coroutines.Job? = null
+
+    fun setSyncEnabled(on: Boolean) {
+        syncFolder.setEnabled(on)
+        if (on) startSyncLoop() else { syncJob?.cancel(); syncJob = null }
+    }
+
+    /** Broadcast our sync manifest so the Mac can pull anything it's missing. */
+    fun broadcastSyncManifest() {
+        if (_state.value != ConnectionState.PAIRED || !syncFolder.enabled.value) return
+        if (!hasAllFilesAccess()) return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                send(Packet("sync.manifest", JSONObject().put("files", syncFolder.manifest())))
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun startSyncLoop() {
+        syncJob?.cancel()
+        if (!syncFolder.enabled.value) return
+        syncJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            while (_state.value == ConnectionState.PAIRED && syncFolder.enabled.value) {
+                broadcastSyncManifest()
+                kotlinx.coroutines.delay(10_000)
+            }
+        }
+    }
+
+    private fun sendSyncFile(rel: String) {
+        val dest = syncFolder.destFor(rel) ?: return
+        if (dest.exists() && dest.isFile) sendFileFromPath(dest, syncRel = rel)
+    }
+
+    /** Receive a Mac sync file into the phone's sync folder (atomic + mtime-stamped). */
+    private fun receiveSyncFile(rel: String, size: Long, port: Int, mtime: Long, enc: Boolean) {
+        val host = currentMac?.host ?: return
+        val dest = syncFolder.destFor(rel)
+        if (dest == null) {
+            appendLog("Sync: refused unsafe path $rel")
+            syncFolder.pullFinished(rel, false)
+            return
+        }
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val part = java.io.File(dest.parentFile, dest.name + ".part")
+            try {
+                dest.parentFile?.mkdirs()
+                Socket().use { s ->
+                    s.connect(InetSocketAddress(host, port), 10000)
+                    val input = encInput(s, enc)
+                    part.outputStream().use { out ->
+                        val buf = ByteArray(65536); var received = 0L
+                        while (received < size) {
+                            val n = input.read(buf); if (n < 0) break
+                            out.write(buf, 0, n); received += n
+                        }
+                        if (received < size) throw IllegalStateException("connection closed early")
+                    }
+                }
+                syncFolder.backupBeforeOverwrite(dest) // keep the old copy recoverable
+                if (!part.renameTo(dest)) throw IllegalStateException("could not place synced file")
+                if (mtime > 0) dest.setLastModified(mtime)
+                appendLog("Sync → $rel")
+                syncFolder.pullFinished(rel, true)
+                broadcastSyncManifest()
+            } catch (e: Exception) {
+                part.delete()
+                appendLog("Sync failed for $rel: ${e.message}")
+                syncFolder.pullFinished(rel, false)
+            }
         }
     }
 
@@ -633,14 +732,17 @@ object ConnectionManager {
 
     fun startMic() {
         if (_state.value != ConnectionState.PAIRED || _micStreaming.value) return
+        val enc = sideChannelEnc()
         val streamer = MicStreamer(
             scope = scope,
+            cipher = if (enc) crypto else null,
             onOffer = { sampleRate, channels, port ->
                 send(Packet("audio.start", JSONObject().apply {
                     put("direction", "mic")
                     put("sampleRate", sampleRate)
                     put("channels", channels)
                     put("port", port)
+                    if (enc) put("enc", true)
                 }))
             },
             onLog = ::appendLog,
@@ -688,6 +790,7 @@ object ConnectionManager {
             scope = scope,
             host = host, port = port, width = size.first, height = size.second,
             surface = surface,
+            cipher = if (pendingMacScreenEnc) crypto else null,
             onLog = ::appendLog,
             onStopped = { },
         )
@@ -726,14 +829,17 @@ object ConnectionManager {
         } ?: return
 
         _screenSharing.value = true
+        val enc = sideChannelEnc()
         val streamer = ScreenStreamer(
             context = appContext,
             scope = scope,
+            cipher = if (enc) crypto else null,
             onOffer = { width, height, port ->
                 send(Packet("screen.start", JSONObject().apply {
                     put("width", width)
                     put("height", height)
                     put("port", port)
+                    if (enc) put("enc", true)
                 }))
             },
             onLog = ::appendLog,
@@ -774,6 +880,8 @@ object ConnectionManager {
 
     private val storageRoot: String
         get() = android.os.Environment.getExternalStorageDirectory().absolutePath
+
+    fun hasAllFilesAccessPublic(): Boolean = hasAllFilesAccess()
 
     private fun hasAllFilesAccess(): Boolean =
         android.os.Build.VERSION.SDK_INT < 30 ||
@@ -834,7 +942,18 @@ object ConnectionManager {
         }
     }
 
-    private fun sendFileFromPath(file: java.io.File) {
+    // --- Side-channel encryption helpers ---
+    // A side channel is encrypted only when the peer negotiated it AND we hold a
+    // session key; otherwise it's the exact plaintext path as before.
+    private fun sideChannelEnc(): Boolean = peerEncSideChannels && crypto.isReady
+
+    private fun encInput(socket: Socket, enc: Boolean): java.io.InputStream =
+        if (enc) EncInputStream(socket.getInputStream(), crypto) else socket.getInputStream()
+
+    private fun encOutput(socket: Socket, enc: Boolean): java.io.OutputStream =
+        if (enc) EncOutputStream(socket.getOutputStream(), crypto) else socket.getOutputStream()
+
+    private fun sendFileFromPath(file: java.io.File, syncRel: String? = null) {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 if (!file.exists() || !file.isFile) {
@@ -842,18 +961,23 @@ object ConnectionManager {
                     return@launch
                 }
                 val size = file.length()
+                val enc = sideChannelEnc()
                 java.net.ServerSocket(0).use { server ->
                     server.soTimeout = 15000
                     send(Packet("file.offer", JSONObject().apply {
                         put("name", file.name)
                         put("size", size)
                         put("port", server.localPort)
+                        if (enc) put("enc", true)
+                        if (syncRel != null) {
+                            put("sync", true); put("p", syncRel); put("mtime", file.lastModified())
+                        }
                     }))
                     appendLog("Sending ${file.name} to Mac")
                     server.accept().use { client ->
                         client.tcpNoDelay = true
                         file.inputStream().use { input ->
-                            val out = client.getOutputStream()
+                            val out = encOutput(client, enc)
                             val buf = ByteArray(65536)
                             while (true) {
                                 val n = input.read(buf)
@@ -904,6 +1028,7 @@ object ConnectionManager {
                     return@launch
                 }
 
+                val enc = sideChannelEnc()
                 java.net.ServerSocket(0).use { server ->
                     server.soTimeout = 20000
                     val arr = org.json.JSONArray()
@@ -913,12 +1038,13 @@ object ConnectionManager {
                         put("offset", offset)
                         put("hasMore", hasMore)
                         put("items", arr)
+                        if (enc) put("enc", true)
                     }))
                     appendLog("Serving ${items.size} thumbnails (${offset + 1}–${offset + items.size} of $total)")
 
                     server.accept().use { client ->
                         client.tcpNoDelay = true
-                        val out = java.io.BufferedOutputStream(client.getOutputStream())
+                        val out = java.io.BufferedOutputStream(encOutput(client, enc))
                         for ((id, _) in items) {
                             val uri = android.content.ContentUris.withAppendedId(collection, id)
                             val bytes = try {
@@ -995,6 +1121,7 @@ object ConnectionManager {
                     return@launch
                 }
 
+                val enc = sideChannelEnc()
                 ServerSocket(0).use { server ->
                     server.soTimeout = 15000
                     send(Packet("file.offer", JSONObject().apply {
@@ -1002,13 +1129,14 @@ object ConnectionManager {
                         put("size", size)
                         put("port", server.localPort)
                         if (pull) put("pull", true)
+                        if (enc) put("enc", true)
                     }))
                     _transferStatus.value = "Sending $name…"
                     appendLog("Offering $name (${size / 1024} KB)")
 
                     server.accept().use { client ->
                         resolver.openInputStream(uri)?.use { input ->
-                            val out = client.getOutputStream()
+                            val out = encOutput(client, enc)
                             val buf = ByteArray(65536)
                             var sent = 0L
                             while (true) {
@@ -1034,11 +1162,11 @@ object ConnectionManager {
 
     // MARK: file transfer — receiving (Mac → phone)
 
-    private fun receiveFile(name: String, size: Long, port: Int, dir: String = "") {
+    private fun receiveFile(name: String, size: Long, port: Int, dir: String = "", enc: Boolean = false) {
         // If a target folder is given and we have all-files access, write there directly
         // (file-manager push). Otherwise fall back to MediaStore Downloads.
         if (dir.isNotEmpty() && hasAllFilesAccess()) {
-            receiveFileToDir(name, size, port, dir)
+            receiveFileToDir(name, size, port, dir, enc)
             return
         }
         val host = currentMac?.host ?: return
@@ -1060,7 +1188,7 @@ object ConnectionManager {
                 Socket().use { transferSocket ->
                     transferSocket.connect(InetSocketAddress(host, port), 10000)
                     resolver.openOutputStream(uri)?.use { out ->
-                        val input = transferSocket.getInputStream()
+                        val input = encInput(transferSocket, enc)
                         val buf = ByteArray(65536)
                         var received = 0L
                         while (received < size) {
@@ -1090,7 +1218,7 @@ object ConnectionManager {
     }
 
     /** File-manager push: write a Mac file straight into a phone folder. */
-    private fun receiveFileToDir(name: String, size: Long, port: Int, dir: String) {
+    private fun receiveFileToDir(name: String, size: Long, port: Int, dir: String, enc: Boolean = false) {
         val host = currentMac?.host ?: return
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val dest = java.io.File(dir, name.replace("/", "_"))
@@ -1099,7 +1227,7 @@ object ConnectionManager {
                 Socket().use { transferSocket ->
                     transferSocket.connect(InetSocketAddress(host, port), 10000)
                     dest.outputStream().use { out ->
-                        val input = transferSocket.getInputStream()
+                        val input = encInput(transferSocket, enc)
                         val buf = ByteArray(65536)
                         var received = 0L
                         while (received < size) {
@@ -1129,6 +1257,8 @@ object ConnectionManager {
         when (packet.type) {
             "identity" -> {
                 packet.body.optString("name").takeIf { it.isNotEmpty() }?.let { _macName.value = it }
+                // Mac advertises whether it can encrypt side-channel transfers.
+                peerEncSideChannels = packet.body.optBoolean("enc", false)
             }
 
             "pair.accept" -> {
@@ -1143,6 +1273,7 @@ object ConnectionManager {
                 appendLog("Paired with ${_macName.value}")
                 startBackgroundService()
                 flushPendingShares()
+                startSyncLoop()
             }
 
             "pair.reject" -> {
@@ -1201,7 +1332,28 @@ object ConnectionManager {
                 val size = packet.body.optLong("size", -1)
                 val port = packet.body.optInt("port", -1)
                 val dir = packet.body.optString("dir", "")
-                if (size >= 0 && port > 0) receiveFile(name, size, port, dir)
+                val enc = packet.body.optBoolean("enc", false)
+                if (size < 0 || port <= 0) return
+                if (packet.body.optBoolean("sync", false)) {
+                    receiveSyncFile(packet.body.optString("p"), size, port, packet.body.optLong("mtime", 0), enc)
+                } else {
+                    receiveFile(name, size, port, dir, enc)
+                }
+            }
+
+            "sync.manifest" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                if (!syncFolder.enabled.value) return
+                if (!hasAllFilesAccess()) { syncFolder.noteNeedsPermission(); return }
+                syncFolder.applyRemoteManifest(packet.body.optJSONArray("files") ?: JSONArray()) { rel ->
+                    scope.launch { send(Packet("sync.pull", JSONObject().put("p", rel))) }
+                }
+            }
+
+            "sync.pull" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val rel = packet.body.optString("p")
+                if (rel.isNotEmpty()) sendSyncFile(rel)
             }
 
             "pull.request" -> {
@@ -1264,10 +1416,12 @@ object ConnectionManager {
                 )
                 speakerPlayer = player
                 _speakerPlaying.value = true
+                val enc = packet.body.optBoolean("enc", false)
                 player.start(
                     host, port,
                     packet.body.optInt("sampleRate", 48000),
-                    packet.body.optInt("channels", 2)
+                    packet.body.optInt("channels", 2),
+                    if (enc) crypto else null
                 )
             }
 
@@ -1321,6 +1475,7 @@ object ConnectionManager {
                 val h = packet.body.optInt("height", 0)
                 if (port <= 0 || w <= 0 || h <= 0) return
                 pendingMacScreen = Triple(host, port, w to h)
+                pendingMacScreenEnc = packet.body.optBoolean("enc", false)
                 val intent = Intent(appContext, MacScreenActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 appContext.startActivity(intent)

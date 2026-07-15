@@ -52,6 +52,26 @@ One JSON object per line, terminated by `\n`:
 | `gallery.request` | Mac → Android | `{}` | Mac wants to browse the phone's gallery |
 | `gallery.thumbs` | Android → Mac | `{"port": 54321, "items": [{"id": 123, "name": "…"}]}` | thumbnail side channel: for each item, `[4-byte length][JPEG]` in order |
 | `gallery.pull` | Mac → Android | `{"id": 123}` | pull the full-resolution image for a gallery item; phone sends it via `file.offer` → Mac Downloads |
+| `sync.manifest` | both | `{"files": [{"p": "sub/doc.txt", "s": 123, "m": 1720900000000}]}` | Sync-folder listing (relative path, size, mtime ms). Sent on toggle-on, pairing, changes, and periodically. Receiver pulls files that are missing or newer on the sender |
+| `sync.pull` | both | `{"p": "sub/doc.txt"}` | ask the peer to send that sync-folder file; it replies with a `file.offer` carrying `"sync": true` and `"mtime"` so the receiver writes it into its own sync folder (subfolders preserved) and stamps the original mtime (prevents echo loops) |
+
+## Side-channel encryption (v2 peers)
+
+Both sides advertise `"enc": true` in their `identity` packet. When **both** peers
+support it, every side-channel byte transfer (files, clipboard images, gallery
+thumbnails, audio, screen video) is encrypted with the SAME per-connection
+AES-256-GCM key as the control channel. Each offer packet carries `"enc": true`
+so the receiver knows how to read that specific transfer — a mixed pairing
+(old app on either end) transparently falls back to plaintext.
+
+Encrypted side-channel wire format — repeated records:
+
+```
+[4-byte big-endian length N][N bytes: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag]
+```
+
+The concatenation of all decrypted records equals the original plaintext stream;
+`size` fields in offers always refer to PLAINTEXT bytes.
 
 ## Audio streaming
 Same side-channel pattern as files, but continuous:

@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +92,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MacDroidTheme {
+                // Survive config-change recreation so the splash doesn't replay.
+                var showSplash by rememberSaveable { mutableStateOf(true) }
                 var showOnboarding by remember { mutableStateOf(!OnboardingPrefs.isDone(this)) }
                 Box(
                     Modifier
@@ -104,6 +107,9 @@ class MainActivity : ComponentActivity() {
                         })
                     } else {
                         MacDroidScreen(onReplayOnboarding = { showOnboarding = true })
+                    }
+                    if (showSplash) {
+                        SplashScreen(onFinished = { showSplash = false })
                     }
                 }
             }
@@ -1002,6 +1008,9 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         }
         Entrance(5) { NotificationsCard(accessGranted = notifAccessOn) }
 
+        Entrance(5) { SectionLabel("Sync", Modifier.padding(top = 8.dp)) }
+        Entrance(5) { SyncCard() }
+
         Entrance(6) {
             Row(
                 Modifier.padding(top = 8.dp),
@@ -1069,6 +1078,55 @@ private fun TabSyncCard(watcherEnabled: Boolean) {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SyncCard() {
+    val context = LocalContext.current
+    val enabled by ConnectionManager.syncFolder.enabled.collectAsState()
+    val status by ConnectionManager.syncFolder.status.collectAsState()
+    val allFiles by produceState(initialValue = ConnectionManager.hasAllFilesAccessPublic()) {
+        while (true) { value = ConnectionManager.hasAllFilesAccessPublic(); delay(2000) }
+    }
+    DarkCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Sync folder",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.material3.Switch(
+                checked = enabled && allFiles,
+                onCheckedChange = { on ->
+                    if (on && !allFiles) {
+                        ConnectionManager.requestAllFilesAccess()
+                    }
+                    ConnectionManager.setSyncEnabled(on)
+                    if (on) ConnectionManager.broadcastSyncManifest()
+                },
+            )
+        }
+        Text(
+            "Files in the “Bifrost Sync” folder on this phone mirror to the folder you picked on the Mac — both ways, newest wins. Nothing is ever deleted by sync.",
+            color = MdWhite40,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+        )
+        when {
+            enabled && !allFiles -> GhostPill("Grant all-files access") {
+                ConnectionManager.requestAllFilesAccess()
+            }
+            enabled && status.isNotEmpty() -> Text(
+                "✓ $status",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+            )
         }
     }
 }

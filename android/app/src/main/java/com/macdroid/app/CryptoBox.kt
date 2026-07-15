@@ -92,6 +92,38 @@ class CryptoBox {
         }
     }
 
+    // ----- Raw (binary) sealing for side channels -----
+    // Same key and AES-256-GCM construction as the control channel, but returns
+    // raw bytes (nonce ‖ ciphertext ‖ tag) instead of base64 — used to frame
+    // file/screen/audio/gallery side-channel transfers without base64 bloat.
+
+    /** Encrypt raw bytes → (nonce ‖ ciphertext ‖ tag), or null if no key. */
+    fun sealRaw(plaintext: ByteArray, offset: Int = 0, length: Int = plaintext.size): ByteArray? {
+        val k = key ?: return null
+        return try {
+            val nonce = ByteArray(12).also { random.nextBytes(it) }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, k, GCMParameterSpec(128, nonce))
+            nonce + cipher.doFinal(plaintext, offset, length)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** (nonce ‖ ciphertext ‖ tag) → plaintext, or null on failure/no key. */
+    fun openRaw(data: ByteArray, offset: Int = 0, length: Int = data.size): ByteArray? {
+        val k = key ?: return null
+        return try {
+            if (length < 12) return null
+            val nonce = data.copyOfRange(offset, offset + 12)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, k, GCMParameterSpec(128, nonce))
+            cipher.doFinal(data, offset + 12, length - 12)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun BigInteger.toFixed(size: Int): ByteArray {
         val bytes = toByteArray()
         return when {
