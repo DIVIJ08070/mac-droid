@@ -76,33 +76,76 @@ struct ContentView: View {
 
     // MARK: - Main screen
 
+    private var updateAccent: Color { Color(red: 0.49, green: 0.42, blue: 1.0) }
+
+    private var updateBannerFailed: Bool {
+        if case .failed = updater.phase { return true }
+        return false
+    }
+
+    private var updateBannerTitle: String {
+        switch updater.phase {
+        case .failed:                    return "Update failed"
+        case .downloading, .installing:  return "Updating to Bifrost \(updater.latestVersion ?? "")"
+        default:                         return "Update available — Bifrost \(updater.latestVersion ?? "")"
+        }
+    }
+
+    private var updateBannerSubtitle: String {
+        switch updater.phase {
+        case .idle:                 return "You have \(updater.currentVersion). One click to update in place."
+        case .downloading(let p):   return "Downloading… \(Int(p * 100))%"
+        case .installing:           return "Installing and restarting…"
+        case .failed(let message):  return message
+        }
+    }
+
+    @ViewBuilder private var updateBannerControl: some View {
+        switch updater.phase {
+        case .idle:
+            Button("Update") { updater.installUpdate() }
+                .buttonStyle(PillButtonStyle(kind: .primary, size: 11))
+        case .downloading(let p):
+            ProgressView(value: p)
+                .progressViewStyle(.linear)
+                .tint(updateAccent)
+                .frame(width: 96)
+        case .installing:
+            ProgressView().controlSize(.small)
+        case .failed:
+            HStack(spacing: 8) {
+                Button("Retry") { updater.installUpdate() }
+                    .buttonStyle(PillButtonStyle(kind: .primary, size: 11))
+                Button("Browser") { updater.openInBrowser() }
+                    .buttonStyle(PillButtonStyle(kind: .secondary, size: 11))
+            }
+        }
+    }
+
     private var updateBanner: some View {
         HStack(spacing: 12) {
-            Image(systemName: "arrow.down.circle.fill")
-                .foregroundStyle(Color(red: 0.49, green: 0.42, blue: 1.0))
+            Image(systemName: updateBannerFailed ? "exclamationmark.triangle.fill" : "arrow.down.circle.fill")
+                .foregroundStyle(updateBannerFailed ? Color.orange : updateAccent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Update available — Bifrost \(updater.latestVersion ?? "")")
+                Text(updateBannerTitle)
                     .font(Theme.mono(12, .medium))
                     .foregroundStyle(.white)
-                Text("You have \(updater.currentVersion). Get the newest build.")
+                Text(updateBannerSubtitle)
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.dim)
             }
             Spacer()
-            Button("Update") {
-                if let url = updater.downloadURL { NSWorkspace.shared.open(url) }
-            }
-            .buttonStyle(PillButtonStyle(kind: .primary, size: 11))
+            updateBannerControl
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                .fill(Color(red: 0.49, green: 0.42, blue: 1.0).opacity(0.12))
+                .fill(updateAccent.opacity(0.12))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                .strokeBorder(Color(red: 0.49, green: 0.42, blue: 1.0).opacity(0.4), lineWidth: 1)
+                .strokeBorder(updateAccent.opacity(0.4), lineWidth: 1)
         )
     }
 

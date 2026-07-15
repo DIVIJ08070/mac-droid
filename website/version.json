@@ -1,8 +1,8 @@
 {
   "mac": {
-    "version": "1.1",
+    "version": "1.2.1",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Reply to phone notifications right from the Mac banner, plus reliability fixes: banners now clear when you dismiss them on the phone, and failed replies tell you instead of disappearing."
+    "notes": "One-click in-app updates: hit Update and Bifrost downloads, verifies the signature, swaps itself, and relaunches — no browser, no dragging. Includes reply-from-Mac hardening."
   },
   "android": {
     "versionCode": 2,
