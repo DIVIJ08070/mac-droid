@@ -578,6 +578,12 @@ object ConnectionManager {
         }
     }
 
+    /** Presentation clicker: next / prev / black / start / end. */
+    fun sendPresent(action: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch { send(Packet("present", JSONObject().put("action", action))) }
+    }
+
     /** Tab sync: tell the Mac which page is open in the phone's browser. */
     fun sendBrowse(url: String) {
         if (_state.value != ConnectionState.PAIRED) return

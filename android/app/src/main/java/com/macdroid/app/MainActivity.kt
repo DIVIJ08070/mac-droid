@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -185,7 +187,8 @@ fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     val state by ConnectionManager.state.collectAsState()
     val macName by ConnectionManager.macName.collectAsState()
     var showTouchpad by remember { mutableStateOf(false) }
-    val touchpadVisible = state == ConnectionState.PAIRED && showTouchpad
+    var showPresenter by remember { mutableStateOf(false) }
+    val fullPane = state == ConnectionState.PAIRED && (showTouchpad || showPresenter)
 
     Column(
         modifier = Modifier
@@ -195,7 +198,7 @@ fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (!touchpadVisible) {
+        if (!fullPane) {
             HomeHeader(state, macName, onReplayOnboarding)
             UpdateBanner()
         }
@@ -205,14 +208,87 @@ fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
                 ConnectionState.CONNECTING -> StatusPane("Connecting to your Mac…")
                 ConnectionState.PAIRING -> PairingPane()
                 ConnectionState.PAIRED ->
-                    if (showTouchpad) {
-                        TouchpadPane(onBack = { showTouchpad = false })
-                    } else {
-                        ConnectedPane(onOpenTouchpad = { showTouchpad = true })
+                    when {
+                        showTouchpad -> TouchpadPane(onBack = { showTouchpad = false })
+                        showPresenter -> PresenterPane(onBack = { showPresenter = false })
+                        else -> ConnectedPane(
+                            onOpenTouchpad = { showTouchpad = true },
+                            onOpenPresenter = { showPresenter = true },
+                        )
                     }
             }
         }
-        if (!touchpadVisible) LogPane()
+        if (!fullPane) LogPane()
+    }
+}
+
+@Composable
+private fun PresenterPane(onBack: () -> Unit) {
+    var seconds by remember { mutableStateOf(0) }
+    var running by remember { mutableStateOf(true) }
+    LaunchedEffect(running) {
+        while (running) { delay(1000); seconds++ }
+    }
+    val mm = (seconds / 60).toString().padStart(2, '0')
+    val ss = (seconds % 60).toString().padStart(2, '0')
+
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GhostPill("← Back") { onBack() }
+            SectionLabel("Presenter")
+        }
+        // Timer
+        DarkCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$mm:$ss",
+                    color = MdWhite,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Light,
+                    fontSize = 40.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                GhostPill(if (running) "Pause" else "Resume") { running = !running }
+                Spacer(Modifier.width(8.dp))
+                GhostPill("Reset") { seconds = 0 }
+            }
+        }
+        Text(
+            "Start your slideshow on the Mac, then use these. Works in Keynote, PowerPoint, Google Slides & PDF.",
+            color = MdWhite40,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+        )
+        // Big prev / next
+        Row(
+            Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PresenterBigButton("‹", Modifier.weight(1f)) { ConnectionManager.sendPresent("prev") }
+            PresenterBigButton("›", Modifier.weight(1f)) { ConnectionManager.sendPresent("next") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostPill("▶ Start") { ConnectionManager.sendPresent("start") }
+            GhostPill("⬛ Black") { ConnectionManager.sendPresent("black") }
+            GhostPill("■ End") { ConnectionManager.sendPresent("end") }
+        }
+    }
+}
+
+@Composable
+private fun PresenterBigButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .fillMaxHeight()
+            .background(MdWhite.copy(alpha = 0.06f), androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .border(1.dp, MdWhite.copy(alpha = 0.12f), androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = MdWhite, fontFamily = FontFamily.Monospace, fontSize = 64.sp, fontWeight = FontWeight.Light)
     }
 }
 
@@ -530,7 +606,7 @@ private fun PairingPane() {
 }
 
 @Composable
-private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
+private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Unit = {}) {
     val context = LocalContext.current
     val lastClipboard by ConnectionManager.lastReceivedClipboard.collectAsState()
     val transferStatus by ConnectionManager.transferStatus.collectAsState()
@@ -568,13 +644,22 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Entrance(0) {
-            PrimaryPill(
-                "Open Touchpad",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                onClick = onOpenTouchpad,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryPill(
+                    "Open Touchpad",
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    onClick = onOpenTouchpad,
+                )
+                GhostPill(
+                    "Presenter",
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    onClick = onOpenPresenter,
+                )
+            }
         }
 
         Entrance(1) { SectionLabel("Clipboard & Files", Modifier.padding(top = 8.dp)) }

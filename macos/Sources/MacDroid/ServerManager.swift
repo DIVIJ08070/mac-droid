@@ -322,6 +322,10 @@ final class ServerManager: ObservableObject {
             guard isPaired, let action = packet.body["action"] as? String else { return }
             runCommand(action)
 
+        case "present":
+            guard isPaired, let action = packet.body["action"] as? String else { return }
+            presentationKey(action)
+
         case "audio.start":
             guard isPaired,
                   packet.body["direction"] as? String == "mic",
@@ -473,6 +477,24 @@ final class ServerManager: ObservableObject {
     func mediaCommand(_ action: String) {
         guard isPaired else { return }
         send(Packet(type: "media.command", body: ["action": action]))
+    }
+
+    /// Presentation clicker: inject the key that advances/controls a running
+    /// slideshow (Keynote, PowerPoint, Google Slides, PDF). Needs Accessibility.
+    private func presentationKey(_ action: String) {
+        let keyCode: CGKeyCode
+        switch action {
+        case "next":  keyCode = 124 // →
+        case "prev":  keyCode = 123 // ←
+        case "black": keyCode = 11  // B — blank the screen (PowerPoint/Keynote)
+        case "start": keyCode = 96  // F5 — start slideshow (PowerPoint)
+        case "end":   keyCode = 53  // Esc — end slideshow
+        default: return
+        }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)?.post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)?.post(tap: .cghidEventTap)
+        appendLog("Presenter: \(action)")
     }
 
     func requestPhoneScreen() {
