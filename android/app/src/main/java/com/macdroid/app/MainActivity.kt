@@ -149,6 +149,38 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+private fun UpdateBanner() {
+    val update by ConnectionManager.updateAvailable.collectAsState()
+    val info = update ?: return
+    val accent = androidx.compose.ui.graphics.Color(0xFF7D6BFF)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, accent.copy(alpha = 0.4f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(accent.copy(alpha = 0.12f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clickable { ConnectionManager.openUpdateUrl() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Update available — Bifrost ${info.first}",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                "Tap to download the newest build.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+            )
+        }
+        Text("↓", color = accent, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
+    }
+}
+
+@Composable
 fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     val state by ConnectionManager.state.collectAsState()
     val macName by ConnectionManager.macName.collectAsState()
@@ -165,6 +197,7 @@ fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     ) {
         if (!touchpadVisible) {
             HomeHeader(state, macName, onReplayOnboarding)
+            UpdateBanner()
         }
         Box(Modifier.weight(1f)) {
             when (state) {

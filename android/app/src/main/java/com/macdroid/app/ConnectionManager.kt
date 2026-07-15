@@ -94,6 +94,10 @@ object ConnectionManager {
     private val _mirrorNotifications = MutableStateFlow(false)
     val mirrorNotifications: StateFlow<Boolean> = _mirrorNotifications
 
+    // Update check: (latestVersionName, apkUrl) when a newer build is available.
+    private val _updateAvailable = MutableStateFlow<Pair<String, String>?>(null)
+    val updateAvailable: StateFlow<Pair<String, String>?> = _updateAvailable
+
     // Touchpad events must stay ordered, so a single consumer drains this queue.
     private val inputChannel =
         Channel<Packet>(capacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -101,6 +105,7 @@ object ConnectionManager {
     fun init(context: Context) {
         appContext = context.applicationContext
         createNotificationChannel()
+        checkForUpdate()
         _mirrorNotifications.value =
             appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
                 .getBoolean("mirrorNotifications", false)
@@ -517,6 +522,34 @@ object ConnectionManager {
             send(Packet("ping", JSONObject().put("message", "Ping from phone")))
             appendLog("Ping → Mac")
         }
+    }
+
+    /** Fetch version.json from the site; flag if a newer versionCode is published. */
+    private fun checkForUpdate() {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val currentCode = appContext.packageManager
+                    .getPackageInfo(appContext.packageName, 0).longVersionCode
+                val text = java.net.URL("https://mac-droid.vercel.app/version.json")
+                    .openConnection().apply { connectTimeout = 8000; readTimeout = 8000 }
+                    .getInputStream().bufferedReader().use { it.readText() }
+                val android = JSONObject(text).getJSONObject("android")
+                val latestCode = android.getLong("versionCode")
+                if (latestCode > currentCode) {
+                    _updateAvailable.value =
+                        android.optString("versionName", "new") to android.getString("url")
+                    appendLog("Update available: v${android.optString("versionName")}")
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun openUpdateUrl() {
+        val url = _updateAvailable.value?.second ?: return
+        appContext.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
     fun setMirrorNotifications(enabled: Boolean) {

@@ -334,6 +334,72 @@
   </style>
 </section>
 
+<!-- ══════════ SECTION 2B: ANIMATED DEMO ══════════ -->
+<section id="demo" class="relative bg-black py-28 sm:py-36 overflow-hidden">
+  <div class="blob" style="width:560px;height:560px;top:-140px;left:50%;transform:translateX(-50%);background:#7d6bff"></div>
+  <div class="scrim"></div>
+  <div class="dot-grid absolute inset-0 pointer-events-none"></div>
+  <div class="relative max-w-5xl mx-auto px-6 sm:px-10 text-center">
+    <div data-inview class="text-white/45 text-[13px] tracking-[0.25em] uppercase mb-4">See it move</div>
+    <h2 data-inview style="--d:80ms" class="text-white font-light text-[clamp(28px,5.5vw,52px)] leading-[1.05] tracking-[-0.03em] mb-12">
+      One link. <span id="demoCaption" style="color:#a99bff">Copy here, paste there.</span>
+    </h2>
+
+    <!-- Phone ↔ Mac stage -->
+    <div data-inview style="--d:140ms" class="demo-stage">
+      <!-- Phone -->
+      <div class="demo-phone">
+        <div class="demo-screen"><div class="demo-dot"></div></div>
+      </div>
+      <!-- Beam + travelling packet -->
+      <div class="demo-link">
+        <div class="demo-beam"></div>
+        <div class="demo-packet"></div>
+      </div>
+      <!-- Mac -->
+      <div class="demo-mac">
+        <div class="demo-macscreen"><div class="demo-dot mac"></div></div>
+        <div class="demo-macbase"></div>
+      </div>
+    </div>
+    <p data-inview style="--d:220ms" class="text-white/40 text-[12px] mt-8">Illustration — actual transfers are instant and encrypted.</p>
+  </div>
+
+  <style>
+    .demo-stage {
+      display:flex; align-items:center; justify-content:center; gap:0;
+      max-width:760px; margin:0 auto;
+    }
+    .demo-phone { width:78px; height:158px; border-radius:16px; border:2px solid rgba(255,255,255,0.25);
+      background:rgba(255,255,255,0.04); padding:7px; flex:none; }
+    .demo-screen { width:100%; height:100%; border-radius:9px; background:rgba(125,107,255,0.10); position:relative; overflow:hidden; }
+    .demo-link { flex:1; height:2px; position:relative; margin:0 6px; }
+    .demo-beam { position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(125,107,255,0.55), transparent); }
+    .demo-packet {
+      position:absolute; top:50%; left:0; width:14px; height:14px; border-radius:4px;
+      transform:translate(-50%,-50%); background:#a99bff; box-shadow:0 0 14px rgba(160,140,255,0.9);
+      animation: demoTravel 3.2s ease-in-out infinite;
+    }
+    @keyframes demoTravel {
+      0%   { left:0%;   opacity:0; transform:translate(-50%,-50%) scale(0.6); }
+      12%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
+      88%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
+      100% { left:100%; opacity:0; transform:translate(-50%,-50%) scale(0.6); }
+    }
+    .demo-mac { flex:none; display:flex; flex-direction:column; align-items:center; }
+    .demo-macscreen { width:210px; height:132px; border-radius:10px; border:2px solid rgba(255,255,255,0.25);
+      background:rgba(255,255,255,0.04); position:relative; overflow:hidden; }
+    .demo-macbase { width:250px; height:9px; border-radius:0 0 8px 8px; background:rgba(255,255,255,0.16); margin-top:2px; }
+    .demo-dot { position:absolute; width:22px; height:22px; border-radius:6px; background:#a99bff;
+      top:14px; left:50%; transform:translateX(-50%); opacity:0; animation: demoAppearPhone 3.2s ease-in-out infinite; }
+    .demo-dot.mac { top:50%; left:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:8px;
+      animation: demoAppearMac 3.2s ease-in-out infinite; }
+    @keyframes demoAppearPhone { 0%,10%{opacity:1} 14%,100%{opacity:0} }
+    @keyframes demoAppearMac   { 0%,84%{opacity:0} 92%,100%{opacity:1} }
+    @media (max-width:560px){ .demo-macscreen{width:150px;height:96px} .demo-macbase{width:180px} .demo-phone{width:62px;height:126px} }
+  </style>
+</section>
+
 <!-- ══════════ SECTION 3: METRICS ══════════ -->
 <section id="metrics" class="relative min-h-screen overflow-hidden flex items-center">
   <video class="absolute inset-0 w-full h-full object-cover" autoplay muted loop playsinline
@@ -745,6 +811,25 @@
     requestAnimationFrame(scrubLoop);
   }
   requestAnimationFrame(scrubLoop);
+
+  // ───── Demo caption cycling (in sync with the 3.2s packet loop) ─────
+  const demoCaption = document.getElementById('demoCaption');
+  if (demoCaption) {
+    const captions = [
+      'Copy here, paste there.',
+      'Drag a file across.',
+      'Your phone, as a desktop.',
+      'Mirror & control the screen.',
+      'Audio to your earbuds.',
+    ];
+    let ci = 0;
+    setInterval(() => {
+      ci = (ci + 1) % captions.length;
+      demoCaption.style.opacity = '0';
+      setTimeout(() => { demoCaption.textContent = captions[ci]; demoCaption.style.opacity = '1'; }, 300);
+    }, 3200);
+    demoCaption.style.transition = 'opacity .3s ease';
+  }
 
   // ───── whileInView fade-ups ─────
   const io = new IntersectionObserver(entries => {

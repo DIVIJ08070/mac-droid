@@ -1,0 +1,13 @@
+{
+  "mac": {
+    "version": "1.0",
+    "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
+    "notes": "Latest Bifrost for macOS."
+  },
+  "android": {
+    "versionCode": 1,
+    "versionName": "0.1",
+    "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
+    "notes": "Latest Bifrost for Android."
+  }
+}

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var server: ServerManager
+    @StateObject private var updater = Updater()
     @State private var isDropTargeted = false
     @State private var showDesktopGuide = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -30,6 +31,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 640, minHeight: 640)
         .preferredColorScheme(.dark)
+        .onAppear { updater.check() }
         .overlay { dropOverlay }
         .onDrop(of: [.fileURL, .image, .movie], isTargeted: $isDropTargeted) { providers in
             guard server.isPaired else { return false }
@@ -74,6 +76,36 @@ struct ContentView: View {
 
     // MARK: - Main screen
 
+    private var updateBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(Color(red: 0.49, green: 0.42, blue: 1.0))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Update available — Bifrost \(updater.latestVersion ?? "")")
+                    .font(Theme.mono(12, .medium))
+                    .foregroundStyle(.white)
+                Text("You have \(updater.currentVersion). Get the newest build.")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.dim)
+            }
+            Spacer()
+            Button("Update") {
+                if let url = updater.downloadURL { NSWorkspace.shared.open(url) }
+            }
+            .buttonStyle(PillButtonStyle(kind: .primary, size: 11))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .fill(Color(red: 0.49, green: 0.42, blue: 1.0).opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .strokeBorder(Color(red: 0.49, green: 0.42, blue: 1.0).opacity(0.4), lineWidth: 1)
+        )
+    }
+
     private var mainScreen: some View {
         VStack(spacing: 0) {
             topBar
@@ -83,6 +115,11 @@ struct ContentView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if updater.updateAvailable {
+                        updateBanner
+                            .riseIn(delay: 0.0)
+                    }
+
                     statusHeader
                         .riseIn(delay: 0.05)
 
