@@ -336,6 +336,24 @@ extension HelpPermission {
         granted: nil
     )
 
+    static let phoneNotificationAccess = HelpPermission(
+        name: "Notification access (on the phone)",
+        why: "Mirroring notifications — and firing their action buttons or dismissing them from this Mac — requires Android's Notification access for Bifrost on the phone.",
+        blocks: "Notification mirroring, action buttons and Dismiss from this Mac will not work until you grant Notification access on the phone.",
+        howToGrant: "On the phone, Bifrost shows a permission badge with a grant button — tap it, or go to Settings → Notifications → Notification access → allow Bifrost.",
+        pane: nil,
+        granted: nil
+    )
+
+    static let phoneCallAccess = HelpPermission(
+        name: "Phone & call permissions (on the phone)",
+        why: "Detecting a ringing call needs Android's Phone permission; showing the number needs Call log; the caller's name needs Contacts; Decline needs Answer calls; Silence needs Do Not Disturb access to change the ringer.",
+        blocks: "The incoming-call banner (and its Silence/Decline buttons) will not work until the phone-side permissions are granted.",
+        howToGrant: "On the phone, Bifrost shows a permission badge with grant buttons for each of these — tap through them once and the call banner starts working.",
+        pane: nil,
+        granted: nil
+    )
+
     static let phoneAllFiles = HelpPermission(
         name: "All files access (on the phone)",
         why: "Browsing the phone's storage from this Mac requires Android's \"All files access\" permission for Bifrost on the phone.",
@@ -463,6 +481,48 @@ extension FeatureHelp {
         ],
         permissions: [],
         troubleshooting: "Card missing? Nothing is playing on the phone, or the phone-side Bifrost app hasn't been granted media/notification access on Android. Buttons doing nothing? Check the Activity log and the phone's media app."
+    )
+
+    static let phoneBattery = FeatureHelp(
+        title: "Phone Battery",
+        icon: "battery.75",
+        what: "Your phone's battery, always in sight on this Mac: a battery glyph with the percentage in the menu bar (bolt while charging) and a badge in the connected header. Bifrost alerts you once when the battery drops to 20% without a charger, and nudges you once when it sits at 100% still plugged in — each alert fires once per episode, not repeatedly.",
+        steps: [
+            "Nothing to configure — the level arrives with the phone's regular heartbeat and updates instantly when you plug or unplug the charger.",
+            "Glance at the menu bar: the battery glyph and percentage sit next to the Bifrost icon; hover for a tooltip.",
+            "At ≤20% and not charging you get one \"Phone battery low\" banner; at 100% still plugged in, one \"fully charged\" nudge.",
+            "The badge in the header turns orange when the battery is low.",
+        ],
+        permissions: [.notifications],
+        troubleshooting: "No battery showing? The phone hasn't sent a reading yet — it arrives within seconds of connecting; make sure the phone app is up to date. No low/full alerts? Allow notifications for Bifrost (see above)."
+    )
+
+    static let notificationActions = FeatureHelp(
+        title: "Notification Actions",
+        icon: "bell.badge",
+        what: "Mirrored phone notifications on this Mac carry the notification's own buttons — up to three actions (Archive, Mark as read, Like, …) plus \"Dismiss on phone\" — alongside the existing inline Reply. Clicking a button fires the real action on the phone, exactly as if you'd tapped it there.",
+        steps: [
+            "A phone notification pops up as a Mac banner. Hover it and click Options (or long-click the banner) to see its buttons.",
+            "Click an action — the phone fires it and the notification updates or clears there.",
+            "\"Dismiss on phone\" swipes the notification away on the phone without opening it.",
+            "Repliable notifications keep the inline Reply field — type and press Send as before.",
+        ],
+        permissions: [.notifications, .phoneNotificationAccess],
+        troubleshooting: "No buttons on a banner? That notification has no actions, or it came from an older phone app. Clicked but nothing happened? The notification may already be gone on the phone — check the Activity log."
+    )
+
+    static let callBanner = FeatureHelp(
+        title: "Call Banner",
+        icon: "phone.arrow.down.left",
+        what: "When your phone rings, this Mac shows a high-priority banner with the caller's name and number and two buttons: Silence (mutes the ringer for this ring only — your previous ringer mode comes back after the call) and Decline (rejects the call). Bifrost also pauses the Mac's local media playback so you actually hear the phone — it does not auto-resume.",
+        steps: [
+            "Phone rings → banner appears here with the caller and the ringing indicator shows in the header.",
+            "Silence: the phone stops ringing but the call keeps ringing for the caller — answer on the phone if you want it.",
+            "Decline: the call is rejected outright.",
+            "Answer or end the call on the phone and the banner clears by itself.",
+        ],
+        permissions: [.notifications, .phoneCallAccess],
+        troubleshooting: "No banner when the phone rings? Grant the phone-side permissions (the phone app shows grant buttons for each) and allow notifications for Bifrost here. Media didn't pause? The play/pause key needs the Accessibility-style event injection to be permitted — check the Activity log."
     )
 
     static let activity = FeatureHelp(

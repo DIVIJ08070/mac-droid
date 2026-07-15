@@ -278,6 +278,12 @@ private fun hasPostNotifications(context: android.content.Context) =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         hasPerm(context, Manifest.permission.POST_NOTIFICATIONS)
 
+/** The permissions the call banner can't run without (Contacts stays optional). */
+private fun hasCallPerms(context: android.content.Context) =
+    hasPerm(context, Manifest.permission.READ_PHONE_STATE) &&
+        hasPerm(context, Manifest.permission.READ_CALL_LOG) &&
+        hasPerm(context, Manifest.permission.ANSWER_PHONE_CALLS)
+
 @Composable
 fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     val state by ConnectionManager.state.collectAsState()
@@ -758,8 +764,11 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
     val allFilesGranted by produceState(initialValue = ConnectionManager.hasAllFilesAccessPublic()) {
         while (true) { value = ConnectionManager.hasAllFilesAccessPublic(); delay(2000) }
     }
+    val callPermsGranted by produceState(initialValue = hasCallPerms(context)) {
+        while (true) { value = hasCallPerms(context); delay(2000) }
+    }
     val anyWarning = !photosGranted || !micGranted || !postNotifGranted ||
-        !tabWatcherOn || !notifAccessOn || !allFilesGranted
+        !tabWatcherOn || !notifAccessOn || !allFilesGranted || !callPermsGranted
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -961,6 +970,13 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         Entrance(5) { NotificationsCard(accessGranted = notifAccessOn) }
 
         Entrance(5) {
+            SectionHeader("Calls", Modifier.padding(top = 8.dp), help = HelpContent.calls) {
+                if (!callPermsGranted) PermissionBadge(HelpContent.permCallsBundle)
+            }
+        }
+        Entrance(5) { CallsCard(permsGranted = callPermsGranted) }
+
+        Entrance(5) {
             SectionHeader("Sync", Modifier.padding(top = 8.dp), help = HelpContent.sync) {
                 if (!allFilesGranted) PermissionBadge(HelpContent.permAllFiles)
             }
@@ -1143,6 +1159,79 @@ private fun NotificationsCard(accessGranted: Boolean) {
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
             )
+        }
+    }
+}
+
+@Composable
+private fun CallsCard(permsGranted: Boolean) {
+    val enabled by ConnectionManager.callsEnabled.collectAsState()
+
+    val callPermissions = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* the polled badge and switch pick the result up on their own */ }
+
+    DarkCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Calls on your Mac",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.material3.Switch(
+                checked = enabled && permsGranted,
+                onCheckedChange = { on ->
+                    if (on && !permsGranted) {
+                        callPermissions.launch(
+                            arrayOf(
+                                Manifest.permission.READ_PHONE_STATE,
+                                Manifest.permission.READ_CALL_LOG,
+                                Manifest.permission.ANSWER_PHONE_CALLS,
+                                Manifest.permission.READ_CONTACTS,
+                            )
+                        )
+                    }
+                    ConnectionManager.setCallsEnabled(on)
+                },
+            )
+        }
+        if (!permsGranted) {
+            Text(
+                "Incoming calls show a banner on the Mac with Silence and Decline. Needs the Phone, Call logs " +
+                    "and call-control permissions (Contacts adds caller names).",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        } else if (enabled) {
+            Text(
+                "✓ When this phone rings, the Mac shows who's calling — Silence or Decline from there.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        } else {
+            Text(
+                "Permissions granted. Flip the switch on to get call banners on the Mac.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "This phone's battery shows in the Mac's menu bar automatically.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                modifier = Modifier.weight(1f),
+            )
+            HelpButton(HelpContent.battery)
         }
     }
 }

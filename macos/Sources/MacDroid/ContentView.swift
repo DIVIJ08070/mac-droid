@@ -246,11 +246,27 @@ struct ContentView: View {
                     Text(server.connectedDeviceName ?? "Phone")
                         .font(Theme.mono(24, .light))
                         .foregroundStyle(.white)
+                    if let level = server.phoneBattery {
+                        batteryBadge(level: level, charging: server.phoneCharging)
+                    }
+                }
+                if server.callState == "ringing" {
+                    HStack(spacing: 8) {
+                        PulsingDot(color: .orange)
+                        Text("Incoming call\(server.callerDisplay.isEmpty ? "" : " — \(server.callerDisplay)")")
+                            .font(Theme.mono(12))
+                            .foregroundStyle(.orange)
+                        HelpButton(help: .callBanner)
+                    }
                 }
                 Text("Clipboard, files, audio and input — live over your private link.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
                     .lineSpacing(4)
+                HStack(spacing: 16) {
+                    featureHint(icon: "bell.badge", label: "notification buttons", help: .notificationActions)
+                    featureHint(icon: "phone.arrow.down.left", label: "call banner", help: .callBanner)
+                }
             } else if server.pendingPairCode != nil {
                 SectionLabel("Pairing")
                 HStack(spacing: 10) {
@@ -291,6 +307,39 @@ struct ContentView: View {
         }
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Small capsule with the phone's battery: tiered SF Symbols glyph (bolt when
+    /// charging) + percentage, orange when low, with a "?" opening the full guide.
+    private func batteryBadge(level: Int, charging: Bool) -> some View {
+        let low = level <= 20 && !charging
+        return HStack(spacing: 6) {
+            Image(systemName: ServerManager.batterySymbol(level: level, charging: charging))
+                .font(.system(size: 12))
+                .foregroundStyle(low ? Color.orange : Theme.dim)
+            Text("\(level)%")
+                .font(Theme.mono(11))
+                .foregroundStyle(low ? Color.orange : .white.opacity(0.85))
+            HelpButton(help: .phoneBattery)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.white.opacity(0.07)))
+        .overlay(Capsule().strokeBorder(Theme.cardStroke, lineWidth: 1))
+        .help("Phone battery: \(level)%\(charging ? " · charging" : "")")
+    }
+
+    /// One-line pointer to an always-on background feature and its "?" guide.
+    private func featureHint(icon: String, label: String, help: FeatureHelp) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+            Text(label)
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.dim)
+            HelpButton(help: help)
+        }
     }
 
     // MARK: - Pairing

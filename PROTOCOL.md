@@ -29,11 +29,15 @@ One JSON object per line, terminated by `\n`:
 | `clipboard.image` | Android → Mac | `{"name": "...", "size": 123, "port": 54321}` | a copied image; Mac pulls the bytes on the side channel and puts it on NSPasteboard so ⌘V pastes it into any app |
 | `ping` | both | `{"message": "..."}` | make the receiver ring/notify (find-my-phone) |
 | `file.offer` | both | `{"name": "...", "size": 123, "port": 54321}` | a file is ready; receiver pulls it from the side channel |
-| `notification` | Android → Mac | `{"app":"…","title":"…","text":"…","id":"…","canReply":true}` | mirror a phone notification; `canReply` if it has an inline reply action |
+| `notification` | Android → Mac | `{"app":"…","title":"…","text":"…","id":"…","canReply":true,"key":"…","actions":["Archive","Like"]}` | mirror a phone notification; `canReply` if it has an inline reply action. `key` is the Android sbn key; `actions` lists its non-reply action titles (max 3) — the Mac banner shows them as buttons |
 | `notification.reply` | Mac → Android | `{"id":"…","text":"…"}` | send a typed reply for notification `id` (fires its inline reply action) |
-| `notification.dismiss` | Android → Mac | `{"id":"…"}` | the phone dismissed/cleared notification `id`; the Mac removes the mirrored banner so it can't be replied to after it's gone |
+| `notification.action` | Mac → Android | `{"key":"…","index":0}` | the user clicked action button `index` on the mirrored banner; the phone fires that action's PendingIntent |
+| `notification.dismiss` | both | Android → Mac: `{"id":"…"}` · Mac → Android: `{"key":"…"}` | Android → Mac: the phone dismissed/cleared notification `id`; the Mac removes the mirrored banner so it can't be replied to after it's gone. Mac → Android: the user clicked Dismiss on the banner; the phone cancels notification `key` |
 | `notification.reply.result` | Android → Mac | `{"id":"…","ok":false}` | a Mac reply could not be delivered (notification no longer present); the Mac tells the user instead of assuming success |
-| `heartbeat` | Android → Mac | `{}` | keep-alive, sent every 15 s; receiver ignores it. A failed write tells the phone the link is dead |
+| `heartbeat` | Android → Mac | `{"batt": 87, "charging": false}` | keep-alive, sent every 15 s. Newer phones piggyback the battery level (0–100) and charger state; older ones send `{}`. A failed write tells the phone the link is dead |
+| `battery` | Android → Mac | `{"batt": 87, "charging": true}` | immediate battery snapshot: sent on charger plug/unplug, on Android's battery-low/okay broadcasts, and once right after pairing |
+| `call.state` | Android → Mac | `{"state": "ringing"\|"offhook"\|"idle", "name": "…", "number": "…"}` | phone call state changed. `name`/`number` may be empty (unknown caller, or missing phone-side permission). On `ringing` the Mac shows a high-priority banner with Silence/Decline and pauses local media playback (no auto-resume); `offhook`/`idle` clears the banner |
+| `call.action` | Mac → Android | `{"action": "silence"\|"decline"}` | act on the ringing call: `silence` mutes the ringer for THIS ring only (the phone restores the previous ringer mode when the call ends); `decline` rejects the call |
 | `url` | both | `{"url": "https://…"}` | open this link on the receiver's default browser |
 | `command` | Android → Mac | `{"action": "lock"\|"sleep"\|"mute"\|"volume_up"\|"volume_down"\|"playpause"\|"screenshot"}` | remote-control the Mac; `screenshot` captures and sends the image back as a file |
 | `audio.start` | both | `{"direction": "mic"\|"speaker", "sampleRate": 48000, "channels": 2, "port": 54321}` | an audio stream is available on a side channel (same pull model as files, but endless) |
@@ -115,5 +119,4 @@ deduplicated by the receiver.
 
 ## Roadmap (not yet implemented)
 - TLS with pinned self-signed certificates exchanged at pairing (KDE Connect style)
-- Notification mirroring, battery status, media control
 - SMS from the Mac

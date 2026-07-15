@@ -48,6 +48,17 @@ final class ServerManager: ObservableObject {
     }
     @Published var nowPlaying: NowPlaying?
 
+    // Phone battery, from heartbeats + immediate `battery` packets.
+    @Published var phoneBattery: Int?
+    @Published var phoneCharging = false
+    // One alert per episode: reset when the state that caused it changes.
+    private var lowBatteryAlerted = false
+    private var fullBatteryAlerted = false
+
+    // Incoming-call state, from `call.state` packets.
+    @Published var callState = "idle"
+    @Published var callerDisplay = ""
+
     struct FileEntry: Identifiable {
         var id: String { name }
         let name: String
@@ -106,6 +117,21 @@ final class ServerManager: ObservableObject {
             }
             self.send(Packet(type: "notification.reply", body: ["id": id, "text": text]))
             self.appendLog("Reply → phone: \(text)")
+        }
+        Notifier.shared.onAction = { [weak self] key, index in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: "notification.action", body: ["key": key, "index": index]))
+            self.appendLog("Notification action → phone")
+        }
+        Notifier.shared.onDismissAction = { [weak self] key in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: "notification.dismiss", body: ["key": key]))
+            self.appendLog("Dismissed a notification on the phone")
+        }
+        Notifier.shared.onCallAction = { [weak self] action in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: "call.action", body: ["action": action]))
+            self.appendLog(action == "silence" ? "Silenced the ringing phone" : "Declined the call")
         }
         Notifier.shared.requestAuthorization()
 
@@ -314,7 +340,14 @@ final class ServerManager: ObservableObject {
             appendLog("Ping from phone")
 
         case "heartbeat":
-            break // keep-alive traffic, nothing to do
+            // Keep-alive traffic — newer phones piggyback the battery level on it.
+            if let batt = packet.body["batt"] as? Int {
+                applyBattery(batt, charging: packet.body["charging"] as? Bool ?? false)
+            }
+
+        case "battery":
+            guard isPaired, let batt = packet.body["batt"] as? Int else { return }
+            applyBattery(batt, charging: packet.body["charging"] as? Bool ?? false)
 
         case "notification":
             guard isPaired else { return }
@@ -323,8 +356,17 @@ final class ServerManager: ObservableObject {
             let text = packet.body["text"] as? String ?? ""
             let id = packet.body["id"] as? String ?? ""
             let canReply = packet.body["canReply"] as? Bool ?? false
-            Notifier.shared.show(app: app, title: title, body: text, id: id, canReply: canReply)
+            let key = packet.body["key"] as? String ?? ""
+            let actions = packet.body["actions"] as? [String] ?? []
+            Notifier.shared.show(app: app, title: title, body: text, id: id, canReply: canReply,
+                                 key: key, actions: actions)
             appendLog("Notification from \(app)\(canReply ? " (repliable)" : "")")
+
+        case "call.state":
+            guard isPaired, let state = packet.body["state"] as? String else { return }
+            handleCallState(state,
+                            name: packet.body["name"] as? String ?? "",
+                            number: packet.body["number"] as? String ?? "")
 
         case "notification.dismiss":
             guard isPaired else { return }
@@ -545,6 +587,69 @@ final class ServerManager: ObservableObject {
         send(Packet(type: "pair.reject"))
         pendingPairCode = nil
         appendLog("Pairing rejected")
+    }
+
+    // MARK: - Phone battery
+
+    /// SF Symbol for a battery level, shared by the menu bar and the header.
+    static func batterySymbol(level: Int, charging: Bool) -> String {
+        if charging { return "battery.100.bolt" }
+        switch level {
+        case ..<13: return "battery.0"
+        case ..<38: return "battery.25"
+        case ..<63: return "battery.50"
+        case ..<88: return "battery.75"
+        default: return "battery.100"
+        }
+    }
+
+    private func applyBattery(_ batt: Int, charging: Bool) {
+        let level = max(0, min(100, batt))
+        phoneBattery = level
+        phoneCharging = charging
+        menuBar?.updateBattery(level: level, charging: charging)
+
+        // Episode resets: leaving the state re-arms its alert.
+        if charging || level > 20 { lowBatteryAlerted = false }
+        if !charging || level < 100 { fullBatteryAlerted = false }
+
+        if level <= 20, !charging, !lowBatteryAlerted {
+            lowBatteryAlerted = true
+            Notifier.shared.show(app: "Bifrost", title: "Phone battery low — \(level)%",
+                                 body: "Plug your phone in when you get a chance.")
+            appendLog("Phone battery low — \(level)%")
+        }
+        if level == 100, charging, !fullBatteryAlerted {
+            fullBatteryAlerted = true
+            Notifier.shared.show(app: "Bifrost", title: "Phone fully charged",
+                                 body: "100% — you can unplug it.")
+            appendLog("Phone fully charged — still plugged in")
+        }
+    }
+
+    // MARK: - Incoming calls
+
+    private func handleCallState(_ state: String, name: String, number: String) {
+        let display = name.isEmpty ? number : name
+        let wasRinging = callState == "ringing"
+        callState = state
+        callerDisplay = display
+
+        switch state {
+        case "ringing":
+            guard !wasRinging else { return } // repeated ringing updates: banner already up
+            Notifier.shared.showCall(name: name, number: number)
+            // Pause whatever the Mac is playing while the phone rings (v1: no auto-resume).
+            postMediaKey(16) // NX_KEYTYPE_PLAY
+            appendLog("Incoming call — \(display.isEmpty ? "unknown caller" : display)")
+        case "offhook":
+            Notifier.shared.dismissCall()
+            if wasRinging { appendLog("Call answered on the phone") }
+        default: // "idle"
+            Notifier.shared.dismissCall()
+            if wasRinging { appendLog("Call ended") }
+            callerDisplay = ""
+        }
     }
 
     // MARK: - Actions
@@ -1535,6 +1640,14 @@ final class ServerManager: ObservableObject {
         phoneTabTitle = ""
         lastSentTabURL = nil
         nowPlaying = nil
+        phoneBattery = nil
+        phoneCharging = false
+        lowBatteryAlerted = false
+        fullBatteryAlerted = false
+        menuBar?.updateBattery(level: nil, charging: false)
+        callState = "idle"
+        callerDisplay = ""
+        Notifier.shared.dismissCall()
     }
 
     private func appendLog(_ message: String) {

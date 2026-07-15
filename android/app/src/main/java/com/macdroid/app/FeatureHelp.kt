@@ -437,6 +437,54 @@ object HelpContent {
         openSettings = { ConnectionManager.requestAllFilesAccess() },
     )
 
+    /** Bundle badge for the Calls section — the help sheet splits it into detail. */
+    val permCallsBundle = HelpPermission(
+        name = "Phone access",
+        why = "Call banners on the Mac need Android's phone permissions: Phone to see when a call rings, is " +
+            "answered or ends; Call logs because Android only reveals the caller's number to apps that hold it; " +
+            "and the ability to end calls so Decline on the Mac works.",
+        blocked = "Incoming-call banners on the Mac will not work until you grant the Phone and Call logs " +
+            "permissions — the switch will only re-ask.",
+        grantPath = "Settings → Apps → Bifrost → Permissions → Phone + Call logs (Contacts adds caller names)",
+        openSettings = ::appSettings,
+    )
+
+    val permPhoneState = HelpPermission(
+        name = "Phone",
+        why = "Detects when a call starts ringing, is answered or ends, so the banner on the Mac appears and " +
+            "disappears at the right moment.",
+        blocked = "Call banners will not work at all until you grant Phone access.",
+        grantPath = "Settings → Apps → Bifrost → Permissions → Phone → Allow",
+        openSettings = ::appSettings,
+    )
+
+    val permCallLog = HelpPermission(
+        name = "Call logs",
+        why = "Android only tells an app the incoming number when it also holds the Call logs permission — " +
+            "without it the system leaves the number blank. Bifrost never reads your call history.",
+        blocked = "The Mac banner cannot show who is calling until you grant Call logs.",
+        grantPath = "Settings → Apps → Bifrost → Permissions → Call logs → Allow",
+        openSettings = ::appSettings,
+    )
+
+    val permAnswerCalls = HelpPermission(
+        name = "Make and manage phone calls",
+        why = "\"Decline\" on the Mac rejects the ringing call through Android's telecom service, which requires " +
+            "this permission. Bifrost never places calls.",
+        blocked = "The Decline button on the Mac will do nothing until you grant it — Silence still works.",
+        grantPath = "Settings → Apps → Bifrost → Permissions → Phone → Allow",
+        openSettings = ::appSettings,
+    )
+
+    val permContacts = HelpPermission(
+        name = "Contacts (optional)",
+        why = "Looks up the caller's number in your contacts so the Mac banner shows a name instead of digits. " +
+            "The lookup happens on this phone only — contacts are never uploaded anywhere.",
+        blocked = "Without it the banner shows just the number — everything else still works.",
+        grantPath = "Settings → Apps → Bifrost → Permissions → Contacts → Allow",
+        openSettings = ::appSettings,
+    )
+
     // ----- Feature sheets -----
 
     val presenter = FeatureHelp(
@@ -558,20 +606,59 @@ object HelpContent {
         title = "Notifications",
         what = "Mirrors this phone's notifications to the Mac as native banners, and messages with an inline reply " +
             "can be answered straight from the Mac keyboard — the reply is delivered through the app's own " +
-            "notification action on this phone. The same access drives Now Playing on the Mac: see and control " +
-            "the music or podcast playing here. Ongoing/silent notifications and group summaries are skipped, " +
-            "and Bifrost never mirrors its own.",
+            "notification action on this phone. A notification's own buttons (up to three, like Mark as read or " +
+            "Archive) appear on the Mac banner too, and closing the banner on the Mac clears the notification " +
+            "here. The same access drives Now Playing on the Mac: see and control the music or podcast playing " +
+            "here. Ongoing/silent notifications and group summaries are skipped, and Bifrost never mirrors its own.",
         howTo = listOf(
             "Flip the switch — the first time it opens Android's Notification access page; allow " +
                 "\"Bifrost notifications\".",
             "Back in the app, turn the switch on. New notifications now appear on the Mac as they arrive.",
             "Reply from a Mac banner and the messaging app on this phone sends it.",
-            "Dismissing a notification on the phone removes the mirrored banner on the Mac too.",
+            "Click a button on a Mac banner (Mark as read, Archive, …) and it fires that notification's real " +
+                "action on this phone.",
+            "Dismiss works both ways: swipe it away here and the Mac banner goes; dismiss on the Mac and the " +
+                "notification clears here.",
         ),
         permissions = listOf(permNotificationAccess),
         troubleshoot = "Notifications stopped arriving on the Mac? Toggle Notification access off and on (Android " +
-            "occasionally unbinds listeners), then flip the switch again. Replies only work while the original " +
-            "notification is still visible on the phone.",
+            "occasionally unbinds listeners), then flip the switch again. Replies and buttons only work while the " +
+            "original notification is still visible on the phone.",
+    )
+
+    val calls = FeatureHelp(
+        title = "Calls on your Mac",
+        what = "When this phone rings, a banner appears on the Mac with the caller's name and number — and the Mac " +
+            "pauses whatever it is playing so you actually hear the ring (it never auto-resumes; press play " +
+            "yourself). Silence mutes the ringer for that call only: your normal ringer mode comes back the " +
+            "moment the call ends. Decline rejects the call outright. The call itself always stays on the " +
+            "phone — Bifrost never routes call audio.",
+        howTo = listOf(
+            "Flip the switch — the first time, Android asks for the phone permissions. Grant them all; " +
+                "Contacts is optional but adds caller names.",
+            "When a call comes in, the banner shows on the Mac with Silence and Decline buttons.",
+            "Silence: this ring goes quiet on the phone, the caller keeps hearing ringing.",
+            "Decline: the call is rejected, like tapping the red button on the phone.",
+        ),
+        permissions = listOf(permPhoneState, permCallLog, permAnswerCalls, permContacts),
+        troubleshoot = "No banner? Check the switch is on, all phone permissions are granted, and the devices are " +
+            "connected. Silence only vibrating instead of muting? Some phones require Do Not Disturb access to " +
+            "fully silence the ringer — Bifrost falls back to vibrate there.",
+    )
+
+    val battery = FeatureHelp(
+        title = "Battery on the Mac",
+        what = "This phone's battery level and charging state live in the Mac's menu bar. The level refreshes " +
+            "with every heartbeat and instantly when you plug or unplug the charger. The Mac alerts you once " +
+            "when the phone drops to 20% off the charger, and nudges you once when it sits at 100% still " +
+            "plugged in — each alert fires once per episode, not repeatedly.",
+        howTo = listOf(
+            "Nothing to set up — it works whenever the devices are connected.",
+            "Glance at the percentage next to the Bifrost icon in the Mac's menu bar.",
+            "Plug or unplug the charger and the Mac updates immediately.",
+        ),
+        troubleshoot = "Percentage looks stale? It refreshes every ~15 seconds and on charger events — if it " +
+            "stops moving, the link is probably down; reconnect and it catches up.",
     )
 
     val sync = FeatureHelp(

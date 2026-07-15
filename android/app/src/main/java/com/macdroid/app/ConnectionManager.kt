@@ -98,6 +98,9 @@ object ConnectionManager {
     private val _mirrorNotifications = MutableStateFlow(false)
     val mirrorNotifications: StateFlow<Boolean> = _mirrorNotifications
 
+    private val _callsEnabled = MutableStateFlow(false)
+    val callsEnabled: StateFlow<Boolean> = _callsEnabled
+
     // Update check: (latestVersionName, apkUrl) when a newer build is available.
     private val _updateAvailable = MutableStateFlow<Pair<String, String>?>(null)
     val updateAvailable: StateFlow<Pair<String, String>?> = _updateAvailable
@@ -117,6 +120,10 @@ object ConnectionManager {
         _mirrorNotifications.value =
             appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
                 .getBoolean("mirrorNotifications", false)
+        _callsEnabled.value =
+            appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
+                .getBoolean("callsOnMac", false)
+        registerSystemReceivers()
         // A remembered Mac means the reconnect service should be running from the
         // start — it owns discovery/USB-tunnel retries. Without this it only starts
         // after the next successful pairing, so a fresh app launch never reconnects
@@ -207,6 +214,82 @@ object ConnectionManager {
             "next" -> tc.skipToNext()
             "prev" -> tc.skipToPrevious()
         }
+    }
+
+    // MARK: battery + calls (system receivers)
+
+    private var systemReceiversRegistered = false
+
+    /** Charger plug/unplug and low/okay fire an immediate battery packet;
+     *  the phone-state receiver drives the Mac's incoming-call banner. */
+    private fun registerSystemReceivers() {
+        if (systemReceiversRegistered) return
+        systemReceiversRegistered = true
+        val filter = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(Intent.ACTION_BATTERY_LOW)
+            addAction(Intent.ACTION_BATTERY_OKAY)
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            appContext,
+            object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    sendBatteryNow()
+                }
+            },
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        CallBridge.register(appContext)
+    }
+
+    /** Current level + charging state, shared by the heartbeat and battery packets. */
+    private fun batteryBody(): JSONObject {
+        val bm = appContext.getSystemService(android.os.BatteryManager::class.java)
+        var pct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        // Sticky broadcast: charging state, and a level fallback for odd devices.
+        val sticky = appContext.registerReceiver(
+            null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        )
+        if (pct !in 0..100) {
+            val level = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+            pct = if (level >= 0 && scale > 0) level * 100 / scale else 0
+        }
+        val charging = (sticky?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        return JSONObject().put("batt", pct.coerceIn(0, 100)).put("charging", charging)
+    }
+
+    /** Immediate battery packet (plug/unplug, low/okay, and once after pairing). */
+    fun sendBatteryNow() {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            try {
+                send(Packet("battery", batteryBody()))
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun setCallsEnabled(enabled: Boolean) {
+        _callsEnabled.value = enabled
+        appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
+            .edit().putBoolean("callsOnMac", enabled).apply()
+        appendLog(if (enabled) "Call banners on Mac on" else "Call banners on Mac off")
+    }
+
+    /** ringing / offhook / idle → the Mac's incoming-call banner. */
+    fun sendCallState(state: String, name: String, number: String) {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch {
+            send(Packet("call.state", JSONObject().apply {
+                put("state", state)
+                put("name", name)
+                put("number", number)
+            }))
+        }
+        appendLog("Call $state → Mac")
     }
 
     /** Encrypt and write a packet (once the secure channel is up). */
@@ -383,7 +466,9 @@ object ConnectionManager {
                 kotlinx.coroutines.delay(15_000)
                 if (mySession != sessionId) break
                 val w = writer ?: break
-                writePacket(Packet("heartbeat"))
+                // Battery level rides along so the Mac's menu bar stays current.
+                val body = try { batteryBody() } catch (_: Exception) { JSONObject() }
+                writePacket(Packet("heartbeat", body))
                 if (w.checkError()) {
                     appendLog("Link to Mac lost")
                     try {
@@ -658,7 +743,14 @@ object ConnectionManager {
         appendLog(if (enabled) "Notification mirroring on" else "Notification mirroring off")
     }
 
-    fun sendNotification(app: String, title: String, text: String, id: String, canReply: Boolean) {
+    fun sendNotification(
+        app: String,
+        title: String,
+        text: String,
+        id: String,
+        canReply: Boolean,
+        actions: List<String> = emptyList(),
+    ) {
         if (_state.value != ConnectionState.PAIRED) return
         scope.launch {
             send(Packet("notification", JSONObject().apply {
@@ -667,6 +759,8 @@ object ConnectionManager {
                 put("text", text)
                 put("id", id)
                 put("canReply", canReply)
+                put("key", id) // sbn key, for action/dismiss round-trips
+                put("actions", JSONArray(actions)) // non-reply action titles, ≤3
             }))
         }
     }
@@ -1274,6 +1368,7 @@ object ConnectionManager {
                 startBackgroundService()
                 flushPendingShares()
                 startSyncLoop()
+                sendBatteryNow() // seed the Mac's menu-bar battery right away
             }
 
             "pair.reject" -> {
@@ -1324,6 +1419,26 @@ object ConnectionManager {
                         }))
                     }
                 }
+            }
+
+            "notification.action" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val key = packet.body.optString("key")
+                val index = packet.body.optInt("index", -1)
+                val ok = NotificationMirrorService.instance?.fireAction(key, index) ?: false
+                appendLog(if (ok) "Notification action fired from Mac ✓" else "Action failed (notification gone?)")
+            }
+
+            "notification.dismiss" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val key = packet.body.optString("key")
+                if (key.isNotEmpty()) NotificationMirrorService.instance?.dismissFromMac(key)
+            }
+
+            "call.action" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                if (!_callsEnabled.value) return
+                CallBridge.handleAction(appContext, packet.body.optString("action"))
             }
 
             "file.offer" -> {

@@ -21,6 +21,14 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- One-tap in-app update: hand the downloaded APK to the system installer -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Incoming-call banner on the Mac: ring/offhook/idle state … -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- … the caller's number (Android only reveals it with call-log access) … -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- … Decline from the Mac (TelecomManager.endCall) … -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <!-- … and the caller's name from contacts (optional). -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <application
         android:label="Bifrost"

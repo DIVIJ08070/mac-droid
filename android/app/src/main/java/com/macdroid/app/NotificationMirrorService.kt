@@ -32,22 +32,42 @@ class NotificationMirrorService : NotificationListenerService() {
         // Actions can't be fired while disconnected — drop them so they don't leak
         // and so a stale action is never fired after a rebind.
         replyActions.clear()
+        otherActions.clear()
         if (instance === this) instance = null
         super.onListenerDisconnected()
     }
 
-    /** Rebuild the reply map from the currently-posted notifications. */
+    /** Rebuild the reply + button-action maps from the currently-posted notifications. */
     private fun reseedReplyActions() {
         replyActions.clear()
+        otherActions.clear()
         val active = try { activeNotifications } catch (_: Exception) { null } ?: return
         for (sbn in active) {
             val n = sbn.notification ?: continue
             val replyAction = n.actions?.firstOrNull { action ->
                 action.remoteInputs?.any { it.allowFreeFormInput } == true
-            } ?: continue
-            replyActions[sbn.key] = replyAction
+            }
+            if (replyAction != null) replyActions[sbn.key] = replyAction
+            val extra = nonReplyActions(n, replyAction)
+            if (extra.isNotEmpty()) otherActions[sbn.key] = extra
         }
     }
+
+    /** Tappable non-reply actions, in order, capped at 3 — mirrored as Mac buttons.
+     *  Skips actions with no PendingIntent and anything wanting text input. */
+    private fun nonReplyActions(
+        n: Notification,
+        replyAction: Notification.Action?,
+    ): List<Notification.Action> =
+        n.actions
+            ?.filter { action ->
+                action !== replyAction &&
+                    action.actionIntent != null &&
+                    action.remoteInputs.isNullOrEmpty() &&
+                    !action.title.isNullOrBlank()
+            }
+            ?.take(3)
+            ?: emptyList()
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         instance = this
@@ -79,11 +99,18 @@ class NotificationMirrorService : NotificationListenerService() {
         val canReply = replyAction != null
         if (canReply) replyActions[sbn.key] = replyAction!! else replyActions.remove(sbn.key)
 
-        ConnectionManager.sendNotification(appName, title, text, sbn.key, canReply)
+        // Non-reply buttons (Mark as read, Archive, …) mirror to the Mac banner.
+        val extra = nonReplyActions(n, replyAction)
+        if (extra.isNotEmpty()) otherActions[sbn.key] = extra else otherActions.remove(sbn.key)
+
+        ConnectionManager.sendNotification(
+            appName, title, text, sbn.key, canReply, extra.map { it.title.toString() }
+        )
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         replyActions.remove(sbn.key)
+        otherActions.remove(sbn.key)
         // Tell the Mac to drop the mirrored banner so it can't be replied to after
         // the notification is gone (otherwise the reply would silently fail).
         if (ConnectionManager.mirrorNotifications.value && sbn.packageName != packageName) {
@@ -110,12 +137,39 @@ class NotificationMirrorService : NotificationListenerService() {
         }
     }
 
+    /** Fire a mirrored notification's button action, chosen by index on the Mac. */
+    fun fireAction(key: String, index: Int): Boolean {
+        val action = otherActions[key]?.getOrNull(index) ?: return false
+        return try {
+            action.actionIntent.send()
+            Log.d("MacDroid", "Fired action $index on notification $key")
+            true
+        } catch (e: Exception) {
+            Log.w("MacDroid", "Action failed: ${e.message}")
+            false
+        }
+    }
+
+    /** The Mac closed the banner — clear the notification on the phone too. */
+    fun dismissFromMac(key: String) {
+        try {
+            cancelNotification(key)
+            Log.d("MacDroid", "Dismissed notification $key from Mac")
+        } catch (e: Exception) {
+            Log.w("MacDroid", "Dismiss failed: ${e.message}")
+        }
+    }
+
     companion object {
         @Volatile
         var instance: NotificationMirrorService? = null
 
         // key → reply action, kept while the notification is live.
         private val replyActions = ConcurrentHashMap<String, Notification.Action>()
+
+        // key → non-reply button actions (≤3), bounded exactly like replyActions:
+        // removed when the notification goes, cleared on unbind, reseeded on bind.
+        private val otherActions = ConcurrentHashMap<String, List<Notification.Action>>()
 
         fun isEnabled(context: Context): Boolean {
             val flat = Settings.Secure.getString(
