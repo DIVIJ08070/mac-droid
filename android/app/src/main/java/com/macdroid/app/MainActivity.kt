@@ -230,12 +230,12 @@ private fun UpdateBanner() {
 
 /**
  * Small amber "!" badge shown next to a feature's section label when a
- * permission that feature needs is missing. Tapping it explains what to allow
- * and jumps to the exact settings screen.
+ * permission that feature needs is missing. Tapping it opens the detailed
+ * explanation: why the warning is there, "this feature will not work until you
+ * grant X", and a jump to the exact settings screen.
  */
 @Composable
-private fun PermissionBadge(need: String, why: String, settingsIntent: Intent) {
-    val context = LocalContext.current
+private fun PermissionBadge(permission: HelpPermission) {
     var show by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -248,53 +248,20 @@ private fun PermissionBadge(need: String, why: String, settingsIntent: Intent) {
     ) {
         Text("!", color = MdAmber, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
-    if (show) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { show = false },
-            containerColor = androidx.compose.ui.graphics.Color(0xFF161618),
-            title = {
-                Text(
-                    "$need needed",
-                    color = MdWhite,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 15.sp,
-                )
-            },
-            text = {
-                Text(
-                    why,
-                    color = MdWhite60,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    show = false
-                    context.startActivity(settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }) {
-                    Text("Open settings", color = MdWhite, fontFamily = FontFamily.Monospace)
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { show = false }) {
-                    Text("Later", color = MdWhite40, fontFamily = FontFamily.Monospace)
-                }
-            },
-        )
-    }
+    if (show) PermissionWarningDialog(permission, onDismiss = { show = false })
 }
 
-/** Section label with optional trailing permission badge(s). */
+/** Section label with optional trailing "?" help button and permission badge(s). */
 @Composable
 private fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
+    help: FeatureHelp? = null,
     badges: @Composable () -> Unit = {},
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         SectionLabel(title)
+        if (help != null) HelpButton(help)
         badges()
     }
 }
@@ -310,12 +277,6 @@ private fun hasPhotosAccess(context: android.content.Context) =
 private fun hasPostNotifications(context: android.content.Context) =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         hasPerm(context, Manifest.permission.POST_NOTIFICATIONS)
-
-/** Settings page for this app (runtime permissions live there). */
-private fun appSettingsIntent(context: android.content.Context) = Intent(
-    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-    Uri.parse("package:${context.packageName}"),
-)
 
 @Composable
 fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
@@ -373,7 +334,7 @@ private fun PresenterPane(onBack: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GhostPill("← Back") { onBack() }
-            SectionLabel("Presenter")
+            SectionHeader("Presenter", help = HelpContent.presenter)
         }
         // Timer
         DarkCard {
@@ -508,7 +469,7 @@ private fun DiscoveryPane() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PulsingDot(MdWhite, size = 8.dp)
                 Spacer(Modifier.width(12.dp))
-                SectionLabel("Looking for your Mac")
+                SectionHeader("Looking for your Mac", help = HelpContent.discovery)
             }
         }
         Entrance(1) {
@@ -585,7 +546,7 @@ private fun RemoteConnectCard() {
 
     Entrance(3) {
         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionLabel("Away from home  ·  optional")
+            SectionHeader("Away from home  ·  optional", help = HelpContent.awayFromHome)
             DarkCard(onClick = { expanded = !expanded }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -794,6 +755,11 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
     val notifAccessOn by produceState(initialValue = NotificationMirrorService.isEnabled(context)) {
         while (true) { value = NotificationMirrorService.isEnabled(context); delay(2000) }
     }
+    val allFilesGranted by produceState(initialValue = ConnectionManager.hasAllFilesAccessPublic()) {
+        while (true) { value = ConnectionManager.hasAllFilesAccessPublic(); delay(2000) }
+    }
+    val anyWarning = !photosGranted || !micGranted || !postNotifGranted ||
+        !tabWatcherOn || !notifAccessOn || !allFilesGranted
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -818,13 +784,15 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
+        // One-line legend, shown above the first section that can carry a
+        // warning badge, so the amber "!" explains itself when it first appears.
+        if (anyWarning) {
+            Entrance(1) { WarningLegend(Modifier.padding(top = 4.dp)) }
+        }
+
         Entrance(1) {
-            SectionHeader("Clipboard & Files", Modifier.padding(top = 8.dp)) {
-                if (!photosGranted) PermissionBadge(
-                    "Photos access",
-                    "The Mac can browse this phone's gallery and pull photos — that needs the Photos permission. Files you pick by hand still work without it.",
-                    appSettingsIntent(context),
-                )
+            SectionHeader("Clipboard & Files", Modifier.padding(top = 8.dp), help = HelpContent.clipboardFiles) {
+                if (!photosGranted) PermissionBadge(HelpContent.permPhotos)
             }
         }
         Entrance(1) {
@@ -855,7 +823,7 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             }
         }
 
-        Entrance(2) { SectionLabel("Remote", Modifier.padding(top = 8.dp)) }
+        Entrance(2) { SectionHeader("Remote", Modifier.padding(top = 8.dp), help = HelpContent.remote) }
         Entrance(2) {
             DarkCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -874,12 +842,8 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         }
 
         Entrance(3) {
-            SectionHeader("Audio", Modifier.padding(top = 8.dp)) {
-                if (!micGranted) PermissionBadge(
-                    "Microphone permission",
-                    "\"Use as Mac microphone\" streams your voice to the Mac — allow Microphone for Bifrost to make it work.",
-                    appSettingsIntent(context),
-                )
+            SectionHeader("Audio", Modifier.padding(top = 8.dp), help = HelpContent.audio) {
+                if (!micGranted) PermissionBadge(HelpContent.permMicrophone)
             }
         }
         Entrance(3) {
@@ -934,12 +898,8 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
             // Note: the section's main features (share screen to Mac, view Mac
             // screen) don't need accessibility — only the optional "mouse control"
             // does, and that already has its own inline CTA in the card body.
-            SectionHeader("Screen", Modifier.padding(top = 8.dp)) {
-                if (!postNotifGranted) PermissionBadge(
-                    "Notifications permission",
-                    "When the Mac asks to view this phone's screen, the request arrives as a notification — allow Notifications for Bifrost or you won't see it.",
-                    appSettingsIntent(context),
-                )
+            SectionHeader("Screen", Modifier.padding(top = 8.dp), help = HelpContent.screen) {
+                if (!postNotifGranted) PermissionBadge(HelpContent.permPostNotifications)
             }
         }
         Entrance(4) {
@@ -987,28 +947,24 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         }
 
         Entrance(5) {
-            SectionHeader("Tab Sync", Modifier.padding(top = 8.dp)) {
-                if (!tabWatcherOn) PermissionBadge(
-                    "Accessibility service",
-                    "Sending the page you're browsing to the Mac's menu bar needs the Bifrost tab-sync accessibility service. Turn on \"Bifrost tab sync\".",
-                    Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
-                )
+            SectionHeader("Tab Sync", Modifier.padding(top = 8.dp), help = HelpContent.tabSync) {
+                if (!tabWatcherOn) PermissionBadge(HelpContent.permTabSyncAccessibility)
             }
         }
         Entrance(5) { TabSyncCard(watcherEnabled = tabWatcherOn) }
 
         Entrance(5) {
-            SectionHeader("Notifications", Modifier.padding(top = 8.dp)) {
-                if (!notifAccessOn) PermissionBadge(
-                    "Notification access",
-                    "Mirroring notifications to the Mac and showing Now Playing both need Notification access for Bifrost.",
-                    Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
-                )
+            SectionHeader("Notifications", Modifier.padding(top = 8.dp), help = HelpContent.notifications) {
+                if (!notifAccessOn) PermissionBadge(HelpContent.permNotificationAccess)
             }
         }
         Entrance(5) { NotificationsCard(accessGranted = notifAccessOn) }
 
-        Entrance(5) { SectionLabel("Sync", Modifier.padding(top = 8.dp)) }
+        Entrance(5) {
+            SectionHeader("Sync", Modifier.padding(top = 8.dp), help = HelpContent.sync) {
+                if (!allFilesGranted) PermissionBadge(HelpContent.permAllFiles)
+            }
+        }
         Entrance(5) { SyncCard() }
 
         Entrance(6) {

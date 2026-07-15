@@ -177,7 +177,7 @@ struct ContentView: View {
                     statusHeader
                         .riseIn(delay: 0.05)
 
-                    if !perms.accessibilityOK || !perms.notificationsOK {
+                    if !perms.accessibilityOK || !perms.notificationsOK || !perms.screenRecordingOK {
                         permissionsStrip
                             .riseIn(delay: 0.07)
                     }
@@ -235,7 +235,10 @@ struct ContentView: View {
     private var statusHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             if server.isPaired {
-                SectionLabel("Connected")
+                HStack(spacing: 8) {
+                    SectionLabel("Connected")
+                    HelpButton(help: .connection)
+                }
                 HStack(spacing: 10) {
                     Circle()
                         .fill(Color(red: 0.45, green: 0.95, blue: 0.6))
@@ -260,7 +263,10 @@ struct ContentView: View {
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.dim)
             } else {
-                SectionLabel("Waiting")
+                HStack(spacing: 8) {
+                    SectionLabel("Waiting")
+                    HelpButton(help: .connection)
+                }
                 HStack(spacing: 10) {
                     PulsingDot(color: .white)
                     Text("Advertising as \(macName)")
@@ -335,7 +341,7 @@ struct ContentView: View {
     private var syncCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                cardHeader("Sync Folder", icon: "arrow.triangle.2.circlepath")
+                cardHeader("Sync Folder", icon: "arrow.triangle.2.circlepath", help: .syncFolder)
                 Spacer()
                 Toggle("", isOn: Binding(
                     get: { server.syncFolder.enabled },
@@ -408,7 +414,10 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    SectionLabel("Now Playing")
+                    HStack(spacing: 8) {
+                        SectionLabel("Now Playing")
+                        HelpButton(help: .nowPlaying)
+                    }
                     Text(np.title.isEmpty ? "Unknown" : np.title)
                         .font(Theme.mono(14, .medium))
                         .foregroundStyle(.white)
@@ -458,6 +467,7 @@ struct ContentView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(accent))
+                HelpButton(help: .desktopMode)
                 Spacer()
             }
 
@@ -539,7 +549,7 @@ struct ContentView: View {
 
     private var clipboardCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader("Clipboard", icon: "doc.on.clipboard")
+            cardHeader("Clipboard", icon: "doc.on.clipboard", help: .clipboard)
             Toggle(isOn: $server.autoSyncClipboard) {
                 Text("Auto-sync to phone")
                     .font(Theme.mono(12))
@@ -572,7 +582,7 @@ struct ContentView: View {
 
     private var filesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader("Files", icon: "arrow.up.doc")
+            cardHeader("Files", icon: "arrow.up.doc", help: .files)
             wrapButtons {
                 Button("Send file…") { pickAndSendFiles() }
             }
@@ -595,12 +605,9 @@ struct ContentView: View {
     private var audioCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                cardHeader("Audio", icon: "speaker.wave.2")
+                cardHeader("Audio", icon: "speaker.wave.2", help: .audio)
                 if !perms.screenRecordingOK {
-                    permissionBadge(
-                        "\"Stream Mac audio to phone\" captures system audio with ScreenCaptureKit — for this to work, allow Screen Recording for Bifrost. Click to open System Settings.",
-                        pane: PermissionMonitor.screenRecordingPane
-                    )
+                    PermissionWarningBadge(info: .screenRecording)
                 }
             }
             Toggle(isOn: Binding(
@@ -628,12 +635,9 @@ struct ContentView: View {
     private var remoteCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                cardHeader("Remote", icon: "rectangle.on.rectangle")
+                cardHeader("Remote", icon: "rectangle.on.rectangle", help: .remote)
                 if !perms.screenRecordingOK {
-                    permissionBadge(
-                        "\"Mirror Mac to phone\" and remote screenshots capture this screen — for this to work, allow Screen Recording for Bifrost. Click to open System Settings.",
-                        pane: PermissionMonitor.screenRecordingPane
-                    )
+                    PermissionWarningBadge(info: .screenRecording)
                 }
             }
             wrapButtons {
@@ -811,67 +815,47 @@ struct ContentView: View {
         }
     }
 
-    private func cardHeader(_ title: String, icon: String) -> some View {
+    private func cardHeader(_ title: String, icon: String, help: FeatureHelp? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(Theme.faint)
             SectionLabel(title)
+            if let help {
+                HelpButton(help: help)
+            }
         }
     }
 
     // MARK: - Permission badges
 
-    /// Small warning triangle next to a feature that can't work yet: hover
-    /// explains which permission to allow, click opens the exact Settings pane.
-    private func permissionBadge(_ tooltip: String, pane: String) -> some View {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .font(.system(size: 11))
-            .foregroundColor(.orange)
-            .help(tooltip)
-            .onTapGesture {
-                if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
-            }
-    }
-
-    /// Chips for permissions whose features are phone-driven (no Mac card):
-    /// touchpad/presenter/media keys (Accessibility) and banners (Notifications).
+    /// Legend + chips for missing permissions. The legend renders whenever ANY
+    /// warning can appear (including the per-card Screen Recording badges), so
+    /// the ⚠ symbol is explained the first time the user meets it. Chips cover
+    /// permissions whose features are phone-driven (no Mac card): touchpad/
+    /// presenter/media keys (Accessibility) and banners (Notifications).
     private var permissionsStrip: some View {
-        HStack(spacing: 8) {
-            if !perms.accessibilityOK {
-                permissionChip(
-                    "Accessibility",
-                    tooltip: "The phone's touchpad, presentation clicker and media keys control this Mac — for this to work, allow Accessibility for Bifrost. Click to open System Settings.",
-                    pane: PermissionMonitor.accessibilityPane
-                )
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.orange.opacity(0.85))
+                Text("means a macOS permission is missing — that feature won't work until you grant it. Hover or click any badge for details.")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            if !perms.notificationsOK {
-                permissionChip(
-                    "Notifications",
-                    tooltip: "Phone notifications won't pop up on this Mac — for this to work, allow notifications for Bifrost (style: Banners or Alerts). Click to open System Settings.",
-                    pane: PermissionMonitor.notificationsPane
-                )
+            if !perms.accessibilityOK || !perms.notificationsOK {
+                HStack(spacing: 8) {
+                    if !perms.accessibilityOK {
+                        PermissionWarningChip(info: .accessibility)
+                    }
+                    if !perms.notificationsOK {
+                        PermissionWarningChip(info: .notifications)
+                    }
+                    Spacer()
+                }
             }
-            Spacer()
-        }
-    }
-
-    private func permissionChip(_ label: String, tooltip: String, pane: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundColor(.orange)
-            Text("\(label) permission needed")
-                .font(Theme.mono(10))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color.orange.opacity(0.12)))
-        .overlay(Capsule().strokeBorder(Color.orange.opacity(0.4), lineWidth: 1))
-        .help(tooltip)
-        .onTapGesture {
-            if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
         }
     }
 
@@ -914,7 +898,10 @@ struct ContentView: View {
 
     private var activityCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("Activity")
+            HStack(spacing: 8) {
+                SectionLabel("Activity")
+                HelpButton(help: .activity)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 3) {

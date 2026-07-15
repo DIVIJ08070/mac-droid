@@ -46,6 +46,7 @@ fun TouchpadPane(onBack: () -> Unit) {
         ) {
             OutlinedButton(onClick = onBack) { Text("← Back") }
             Text("Mac Touchpad", style = MaterialTheme.typography.titleMedium)
+            HelpButton(HelpContent.remote)
         }
 
         Box(
