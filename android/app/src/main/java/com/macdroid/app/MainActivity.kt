@@ -906,7 +906,7 @@ private fun NotificationsCard() {
     DarkCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Show phone notifications on the Mac",
+                "Notifications & media on the Mac",
                 color = MdWhite,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -925,16 +925,31 @@ private fun NotificationsCard() {
                 },
             )
         }
-        if (mirroring && !accessGranted) {
+        if (!accessGranted) {
             Text(
-                "Grant \"Notification access\" to MacDroid in the settings that just opened, then flip this on again.",
+                "Turn this on to mirror notifications AND show what's playing on the Mac. Both need one permission: Notification access.",
                 color = MdWhite40,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
+                lineHeight = 18.sp,
             )
+            GhostPill("Grant notification access") {
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
         } else if (mirroring) {
             Text(
-                "✓ Your notifications appear on the Mac.",
+                "✓ Notifications mirror to the Mac, and Now Playing shows what's on your phone.",
+                color = MdWhite40,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        } else {
+            Text(
+                "Access granted. Flip the switch on to mirror notifications + media.",
                 color = MdWhite40,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
