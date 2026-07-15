@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.4.1",
+    "version": "1.5.0",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Encrypted transfers: files, photos, screen mirroring and audio are now end-to-end encrypted. New Sync Folder mirrors a folder with your phone (a private Dropbox). Plus a fresh animated splash."
+    "notes": "Phone battery now shows in the Mac menu bar with low-battery alerts. Mirrored notifications get real action buttons (snooze, archive, dismiss) right on the Mac banner. Incoming calls show a banner with Silence and Decline. Plus a built-in help (?) on every feature."
   },
   "android": {
-    "versionCode": 6,
-    "versionName": "0.4.1",
+    "versionCode": 7,
+    "versionName": "0.5.0",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Encrypted transfers for files, photos, screen and audio. New Sync Folder mirrors “Bifrost Sync” on your phone with a folder on the Mac — both ways. Plus a fresh animated splash."
+    "notes": "Send your battery and calls to the Mac: an incoming call shows on your Mac with Silence and Decline, and notification action buttons work from the Mac banner. New Calls section (grant call permissions to enable it). Plus a built-in help (?) on every feature."
   }
 }
