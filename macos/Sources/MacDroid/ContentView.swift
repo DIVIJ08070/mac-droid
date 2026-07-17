@@ -177,7 +177,7 @@ struct ContentView: View {
                     statusHeader
                         .riseIn(delay: 0.05)
 
-                    if !perms.accessibilityOK || !perms.notificationsOK || !perms.screenRecordingOK {
+                    if !perms.accessibilityOK || !perms.notificationsOK || !perms.screenRecordingOK || !perms.inputMonitoringOK {
                         permissionsStrip
                             .riseIn(delay: 0.07)
                     }
@@ -996,10 +996,13 @@ struct ContentView: View {
                     .foregroundStyle(Theme.faint)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !perms.accessibilityOK || !perms.notificationsOK {
+            if !perms.accessibilityOK || !perms.notificationsOK || !perms.inputMonitoringOK {
                 HStack(spacing: 8) {
                     if !perms.accessibilityOK {
                         PermissionWarningChip(info: .accessibility)
+                    }
+                    if !perms.inputMonitoringOK {
+                        PermissionWarningChip(info: .inputMonitoring)
                     }
                     if !perms.notificationsOK {
                         PermissionWarningChip(info: .notifications)

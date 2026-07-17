@@ -327,6 +327,15 @@ extension HelpPermission {
         granted: \.notificationsOK
     )
 
+    static let inputMonitoring = HelpPermission(
+        name: "Input Monitoring",
+        why: "Universal Control types on your phone by capturing the Mac's keyboard through an event tap. macOS gates keyboard capture behind Input Monitoring — separate from Accessibility, which only covers the mouse. That's why the cursor moves but typing doesn't until you grant this.",
+        blocks: "Typing on the phone during Universal Control will not work until you grant Input Monitoring (the cursor still works without it).",
+        howToGrant: "System Settings → Privacy & Security → Input Monitoring → turn on Bifrost, then re-enter control.",
+        pane: PermissionMonitor.inputMonitoringPane,
+        granted: \.inputMonitoringOK
+    )
+
     static let phoneWirelessDebug = HelpPermission(
         name: "Wireless debugging (on the phone)",
         why: "Desktop Mode drives the phone over ADB, Android's developer bridge. Android only allows that after you enable Developer options and turn on Wireless debugging (or plain USB debugging over a cable).",

@@ -1,8 +1,8 @@
 {
   "mac": {
-    "version": "1.6.2",
+    "version": "1.6.3",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Universal Control now works both ways: slide the cursor off the Mac's right edge to control the phone, and off the phone's left edge to hand it back to the Mac (⌃⌥⌘ still toggles too). Keyboard needs Input Monitoring — grant it when asked."
+    "notes": "The Input Monitoring permission (needed for typing during Universal Control) now shows in the top permissions strip, so you can grant it before pairing. Universal Control works both ways: off the Mac's right edge to the phone, off the phone's left edge back to the Mac."
   },
   "android": {
     "versionCode": 11,
