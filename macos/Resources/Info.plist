@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6.0</string>
+	<string>1.6.1</string>
 	<key>CFBundleVersion</key>
-	<string>11</string>
+	<string>12</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSAppleEventsUsageDescription</key>
@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Bifrost — connect your Mac and Android phone.</string>
+	<key>NSInputMonitoringUsageDescription</key>
+	<string>Bifrost captures your Mac keyboard and mouse to control your phone during Universal Control.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Bifrost connects directly to your phone over your Wi-Fi to sync clipboard, files, screen, audio and input. Nothing leaves your local network.</string>
 </dict>

@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import IOKit.hid
 
 /// Universal-Control-style input for the phone: capture the Mac's mouse +
 /// keyboard and drive a cursor on the phone — no mirror window. Enter by sliding
@@ -25,9 +26,11 @@ final class UniversalControl {
     private var runLoopSource: CFRunLoopSource?
     private var savedPos = CGPoint.zero
     private var hotkeyMonitor: Any?
-    private var edgeMonitor: Any?
+    private var localHotkeyMonitor: Any?
+    private var edgeTimer: Timer?
     private var edgeArmed = true
     private var hotkeyLatched = false
+    private var requestedInputMonitoring = false
 
     // Left-drag detection: while the button is held we accumulate the delta and
     // decide click-vs-drag on release, so a real drag becomes a swipe.
@@ -44,15 +47,28 @@ final class UniversalControl {
     /// Install the lightweight always-on monitors that let the user ENTER control
     /// mode (they don't consume events). The consuming tap is created only on enter.
     func start() {
-        guard hotkeyMonitor == nil else { return }
+        guard edgeTimer == nil else { return }
+        // Hotkey ⌃⌥⌘: a GLOBAL monitor fires only when another app is frontmost,
+        // so pair it with a LOCAL monitor so the hotkey also works while Bifrost
+        // itself is in front (e.g. right after clicking the Control card).
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             guard let self, self.enabled, !self.active else { return }
             Task { @MainActor in self.handleEnterHotkey(event.modifierFlags) }
         }
-        edgeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
-            guard let self, self.enabled, self.edgeSlideEnabled, !self.active, self.isPaired() else { return }
-            Task { @MainActor in self.checkEdge() }
+        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            if let self { MainActor.assumeIsolated { if self.enabled, !self.active { self.handleEnterHotkey(event.modifierFlags) } } }
+            return event
         }
+        // Edge slide: a global mouse monitor does NOT fire while Bifrost is front,
+        // so poll the pointer instead — reliable regardless of the frontmost app.
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.enabled, self.edgeSlideEnabled, !self.active, self.isPaired() else { return }
+                self.checkEdge()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        edgeTimer = timer
     }
 
     func toggle() { active ? exit() : enter() }
@@ -89,6 +105,16 @@ final class UniversalControl {
         guard AXIsProcessTrusted() else {
             onLog?("Universal Control needs Accessibility — enable Bifrost in System Settings → Privacy & Security → Accessibility")
             return
+        }
+        // Capturing KEYBOARD events via an event tap additionally needs Input
+        // Monitoring (mouse only needs Accessibility). Request it once; without it
+        // the cursor works but typing won't reach the phone.
+        if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
+            if !requestedInputMonitoring {
+                requestedInputMonitoring = true
+                _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
+            onLog?("Keyboard control needs Input Monitoring — enable Bifrost in System Settings → Privacy & Security → Input Monitoring, then try again")
         }
         guard installTap() else {
             onLog?("Couldn't start Universal Control (event tap failed)")

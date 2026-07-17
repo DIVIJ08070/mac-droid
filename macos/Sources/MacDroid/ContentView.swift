@@ -472,6 +472,15 @@ struct ContentView: View {
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.faint)
                 .lineSpacing(3)
+            if !perms.inputMonitoringOK {
+                Button("⚠︎ Typing needs Input Monitoring — grant it") {
+                    if let url = URL(string: PermissionMonitor.inputMonitoringPane) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(PillButtonStyle(kind: .secondary, size: 10))
+                .help("The mouse works with Accessibility, but capturing the keyboard needs Input Monitoring. Enable Bifrost there, then re-enter control.")
+            }
             Button(server.controllingPhone ? "Stop controlling  (⌃⌥⌘)" : "Control phone  (⌃⌥⌘)") {
                 server.toggleUniversalControl()
             }

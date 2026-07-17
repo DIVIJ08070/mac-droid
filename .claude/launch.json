@@ -8,12 +8,6 @@
       "port": 3000
     },
     {
-      "name": "tmj-web-verify",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start", "--prefix", "/Users/mac/Desktop/tmj/TMJ_Web"],
-      "port": 3002
-    },
-    {
       "name": "website",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

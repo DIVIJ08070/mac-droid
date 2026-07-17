@@ -1,8 +1,8 @@
 {
   "mac": {
-    "version": "1.6.0",
+    "version": "1.6.1",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Universal Control: slide the Mac cursor off the right edge (or press ⌃⌥⌘) to drive your phone with the Mac's mouse and keyboard — no mirror window. Press ⌃⌥⌘ again to come back. Plus a Samsung Desktop-Mode fix so the DeX launcher appears."
+    "notes": "Universal Control fixes: keyboard now types on the phone (grant Input Monitoring when asked), and the slide-off-the-right-edge trigger works reliably (⌃⌥⌘ also works while Bifrost is in front). Slide the cursor off the right edge or press ⌃⌥⌘ to control your phone."
   },
   "android": {
     "versionCode": 10,

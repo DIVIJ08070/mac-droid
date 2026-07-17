@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import IOKit.hid
 import UserNotifications
 
 /// Watches the macOS permissions Bifrost's features depend on, so the UI can
@@ -18,6 +19,9 @@ final class PermissionMonitor: ObservableObject {
     @Published var screenRecordingOK = true
     /// Phone notification banners on the Mac.
     @Published var notificationsOK = true
+    /// Keyboard for Universal Control (event-tap keyboard capture needs this,
+    /// separate from Accessibility which covers the mouse).
+    @Published var inputMonitoringOK = true
 
     private var timer: Timer?
     private var started = false
@@ -39,6 +43,7 @@ final class PermissionMonitor: ObservableObject {
     func refresh() {
         accessibilityOK = AXIsProcessTrusted()
         screenRecordingOK = CGPreflightScreenCaptureAccess()
+        inputMonitoringOK = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
         // UNUserNotificationCenter crashes without a real bundle (swift run).
         guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
@@ -56,4 +61,6 @@ final class PermissionMonitor: ObservableObject {
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     static let notificationsPane =
         "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+    static let inputMonitoringPane =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
 }
