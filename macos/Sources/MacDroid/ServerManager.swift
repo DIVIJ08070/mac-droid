@@ -560,6 +560,10 @@ final class ServerManager: ObservableObject {
             universalControl.exitIfActive() // phone can't accept control — don't hide our cursor
             appendLog("Phone control unavailable — enable “Bifrost screen control” on the phone")
 
+        case "control.exit":
+            guard isPaired else { return }
+            universalControl.exitIfActive() // user slid off the phone's left edge — back to the Mac
+
         case "sync.manifest":
             guard isPaired else { return }
             let files = packet.body["files"] as? [[String: Any]] ?? []

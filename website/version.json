@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.6.1",
+    "version": "1.6.2",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Universal Control fixes: keyboard now types on the phone (grant Input Monitoring when asked), and the slide-off-the-right-edge trigger works reliably (⌃⌥⌘ also works while Bifrost is in front). Slide the cursor off the right edge or press ⌃⌥⌘ to control your phone."
+    "notes": "Universal Control now works both ways: slide the cursor off the Mac's right edge to control the phone, and off the phone's left edge to hand it back to the Mac (⌃⌥⌘ still toggles too). Keyboard needs Input Monitoring — grant it when asked."
   },
   "android": {
-    "versionCode": 10,
-    "versionName": "0.6.0",
+    "versionCode": 11,
+    "versionName": "0.6.1",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Universal Control: the Mac can now drive a cursor on your phone (with the Mac's mouse & keyboard) — a pointer overlay appears when the Mac takes control. Needs the “Bifrost screen control” accessibility service."
+    "notes": "Universal Control: push the cursor off the phone's left edge to return control to the Mac. Plus density-consistent cursor speed."
   }
 }

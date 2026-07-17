@@ -66,6 +66,7 @@ class RemoteControlService : AccessibilityService() {
     private var density = 1f
     private var dragAnchorX = 0f
     private var dragAnchorY = 0f
+    private var leftPush = 0f
 
     /** Full physical display size, matching the gesture/overlay coordinate space. */
     private fun realScreenSize(): Pair<Int, Int> =
@@ -86,6 +87,7 @@ class RemoteControlService : AccessibilityService() {
         density = resources.displayMetrics.density
         cursorX = screenW / 2f
         cursorY = screenH / 2f
+        leftPush = 0f
         main.post {
             if (cursorView != null) return@post
             val v = CursorView(this)
@@ -122,8 +124,20 @@ class RemoteControlService : AccessibilityService() {
     fun moveCursor(dx: Float, dy: Float) {
         // Deltas arrive in Mac points; scale by density so speed feels the same
         // regardless of the phone's pixel density.
-        cursorX = (cursorX + dx * density).coerceIn(0f, screenW.toFloat())
+        val ndx = dx * density
+        cursorX = (cursorX + ndx).coerceIn(0f, screenW.toFloat())
         cursorY = (cursorY + dy * density).coerceIn(0f, screenH.toFloat())
+        // Push off the LEFT edge → hand the cursor back to the Mac (mirrors the
+        // Mac's slide-off-the-right-edge entry).
+        if (cursorX <= 0f && ndx < 0f) {
+            leftPush += -ndx
+            if (leftPush >= 45f * density) {
+                leftPush = 0f
+                ConnectionManager.requestControlExit()
+            }
+        } else if (cursorX > 8f * density) {
+            leftPush = 0f
+        }
         main.post {
             val v = cursorView ?: return@post
             val lp = v.layoutParams as? WindowManager.LayoutParams ?: return@post

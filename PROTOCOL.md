@@ -52,6 +52,7 @@ One JSON object per line, terminated by `\n`:
 | `control.scroll` | Mac → Android | `{"dy": 40.0}` | scroll at the cursor (positive = up) |
 | `control.stop` | Mac → Android | `{}` | exit control; hide the cursor overlay. Keyboard while controlling reuses `screen.key` |
 | `control.unavailable` | Android → Mac | `{}` | the phone's accessibility service is off — Mac aborts control and restores its cursor |
+| `control.exit` | Android → Mac | `{}` | the user pushed the cursor off the phone's LEFT edge — Mac exits control and takes the cursor back (mirrors the slide-off-the-right-edge entry) |
 | `screen.request` | Mac → Android | `{}` | ask the phone to share its screen; the phone shows a notification (Android requires user consent on-device) |
 | `screen.start` | Android → Mac | `{"width": 540, "height": 1170, "port": 54321}` | screen stream ready: raw H.264 Annex-B on the side channel; Mac opens a viewer window |
 | `screen.stop` | both | `{}` | end the screen stream |

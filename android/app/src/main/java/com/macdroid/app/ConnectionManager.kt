@@ -644,6 +644,12 @@ object ConnectionManager {
         }
     }
 
+    /** Universal Control: user pushed off the phone's left edge → return to the Mac. */
+    fun requestControlExit() {
+        if (_state.value != ConnectionState.PAIRED) return
+        scope.launch { send(Packet("control.exit", JSONObject())) }
+    }
+
     // ----- Folder sync -----
     private var syncJob: kotlinx.coroutines.Job? = null
 
