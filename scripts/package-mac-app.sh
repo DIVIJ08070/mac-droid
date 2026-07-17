@@ -43,14 +43,28 @@ cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 xattr -cr "$APP"
 
 SIGN_KC="$HOME/Library/Keychains/macdroid-signing.keychain-db"
-if security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "MacDroid Self-Signed"; then
-  security unlock-keychain -p macdroid "$SIGN_KC" 2>/dev/null
-  codesign --force --deep -s "MacDroid Self-Signed" --keychain "$SIGN_KC" "$APP"
-  echo "   signed with stable self-signed identity"
-else
-  codesign --force --deep -s - "$APP"
-  echo "   ad-hoc signed (no stable cert found)"
+# The ONE stable self-signed cert every release MUST use. Its leaf is baked into
+# the in-app updater's signature gate and into every granted TCC permission, so
+# signing with a different cert breaks auto-update AND resets Screen Recording /
+# Accessibility / Notifications for every existing user. The build therefore
+# fails loudly rather than silently shipping a mismatched (or ad-hoc) signature.
+EXPECTED_LEAF="f00d88463c9e5045e1b77f5ae14e136c2566827e"
+
+security unlock-keychain -p macdroid "$SIGN_KC" 2>/dev/null || true
+if ! security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "MacDroid Self-Signed"; then
+  echo "✗ Stable signing identity 'MacDroid Self-Signed' not found in $SIGN_KC." >&2
+  echo "  Refusing to ad-hoc sign — that would break auto-update + reset permissions." >&2
+  exit 1
 fi
+codesign --force --deep -s "MacDroid Self-Signed" --keychain "$SIGN_KC" "$APP"
+
+LEAF=$(codesign -d -r- "$APP" 2>/dev/null | sed -n 's/.*certificate leaf = H"\([^"]*\)".*/\1/p' | tr 'A-F' 'a-f')
+if [ "$LEAF" != "$EXPECTED_LEAF" ]; then
+  echo "✗ Signed with the WRONG cert (leaf ${LEAF:-none}, expected $EXPECTED_LEAF)." >&2
+  echo "  This build would break auto-update for existing users. Aborting." >&2
+  exit 1
+fi
+echo "   signed with the stable identity (leaf $LEAF) ✓"
 
 mkdir -p website/downloads
 rm -f website/downloads/MacDroid.app.zip
