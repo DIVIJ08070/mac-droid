@@ -73,9 +73,35 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         button.toolTip = "Phone battery: \(level)%\(charging ? " · charging" : "")"
     }
 
+    /// While Universal Control is active the cursor is hidden and the window may be
+    /// in the background, so the menu bar becomes the always-visible "you're in
+    /// control, here's how to get out" indicator.
+    func updateControlling(_ on: Bool) {
+        guard let button = statusItem?.button else { return }
+        if on {
+            let img = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "Controlling phone")
+            img?.isTemplate = true
+            button.image = img
+            button.attributedTitle = NSAttributedString(
+                string: " Controlling · ⌃⌥⌘ to exit",
+                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)]
+            )
+            button.toolTip = "Controlling phone — press ⌃⌥⌘ to return to the Mac"
+        } else {
+            updateBattery(level: batteryLevel, charging: batteryCharging) // restore normal display
+        }
+    }
+
     // Rebuild the menu each time it opens so it reflects the live connection state.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+
+        if server.controllingPhone {
+            let ctl = NSMenuItem(title: "Controlling phone · ⌃⌥⌘ to exit", action: nil, keyEquivalent: "")
+            ctl.isEnabled = false
+            menu.addItem(ctl)
+            menu.addItem(.separator())
+        }
 
         let statusText = server.isPaired
             ? "Connected · \(server.connectedDeviceName ?? "phone")"

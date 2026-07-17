@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "1.5.1",
+    "version": "1.6.0",
     "url": "https://mac-droid.vercel.app/downloads/Bifrost.app.zip",
-    "notes": "Manage an active call from your Mac: while you're on a call, the header shows Hang up, Mute and Speaker. Plus everything from 1.5.0 — phone battery in the menu bar, notification action buttons, and the incoming-call banner."
+    "notes": "Universal Control: slide the Mac cursor off the right edge (or press ⌃⌥⌘) to drive your phone with the Mac's mouse and keyboard — no mirror window. Press ⌃⌥⌘ again to come back. Plus a Samsung Desktop-Mode fix so the DeX launcher appears."
   },
   "android": {
-    "versionCode": 9,
-    "versionName": "0.5.2",
+    "versionCode": 10,
+    "versionName": "0.6.0",
     "url": "https://mac-droid.vercel.app/downloads/bifrost.apk",
-    "notes": "Fix: a call already in progress when the phone connects to the Mac now shows the call banner right away (previously it only appeared if the call started while already connected). Plus the live-call controls from 0.5.1."
+    "notes": "Universal Control: the Mac can now drive a cursor on your phone (with the Mac's mouse & keyboard) — a pointer overlay appears when the Mac takes control. Needs the “Bifrost screen control” accessibility service."
   }
 }

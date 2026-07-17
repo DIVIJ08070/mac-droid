@@ -3,6 +3,19 @@ import Combine
 import Foundation
 import Network
 
+/// A one-shot thread-safe flag (readabilityHandler chunks can race).
+private final class LockedFlag {
+    private let lock = NSLock()
+    private var done = false
+    /// Returns true exactly once, false on every subsequent call.
+    func setOnce() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
+    }
+}
+
 @MainActor
 final class ServerManager: ObservableObject {
     @Published var statusText = "Starting…"
@@ -77,6 +90,8 @@ final class ServerManager: ObservableObject {
 
     let micReceiver = MicReceiver()
     let syncFolder = SyncFolderManager()
+    let universalControl = UniversalControl()
+    @Published var controllingPhone = false
     private var syncCancellable: AnyCancellable?
     private let inputController = InputController()
     private let screenViewer = ScreenViewer()
@@ -154,6 +169,19 @@ final class ServerManager: ObservableObject {
             guard let self, self.isPaired else { return }
             self.send(Packet(type: "sync.pull", body: ["p": rel]))
         }
+
+        // Universal Control: drive a cursor on the phone with the Mac's mouse+keyboard.
+        universalControl.isPaired = { [weak self] in self?.isPaired ?? false }
+        universalControl.onLog = { [weak self] message in self?.appendLog(message) }
+        universalControl.onSend = { [weak self] type, body in
+            guard let self, self.isPaired else { return }
+            self.send(Packet(type: type, body: body))
+        }
+        universalControl.onActiveChange = { [weak self] on in
+            self?.controllingPhone = on
+            self?.menuBar?.updateControlling(on)
+        }
+        universalControl.start()
 
         micReceiver.onLog = { [weak self] message in self?.appendLog(message) }
         inputController.onLog = { [weak self] message in self?.appendLog(message) }
@@ -526,6 +554,11 @@ final class ServerManager: ObservableObject {
             else { return }
             let enc = (packet.body["enc"] as? Bool) ?? false
             receiveFile(name: name, size: size, host: host, port: UInt16(port), clipboardImage: true, enc: enc)
+
+        case "control.unavailable":
+            guard isPaired else { return }
+            universalControl.exitIfActive() // phone can't accept control — don't hide our cursor
+            appendLog("Phone control unavailable — enable “Bifrost screen control” on the phone")
 
         case "sync.manifest":
             guard isPaired else { return }
@@ -993,17 +1026,55 @@ final class ServerManager: ObservableObject {
         env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:" + (env["PATH"] ?? "")
         env["ADB"] = Self.adbPath
         process.environment = env
-        process.terminationHandler = { [weak self] proc in
-            if proc.terminationStatus != 0 {
-                Task { @MainActor in self?.appendLog("Desktop Mode window closed") }
+
+        // scrcpy logs "New display: …(id=N)" to stderr. On Samsung, a fresh virtual
+        // display comes up EMPTY (the DeX home doesn't auto-attach), so we watch for
+        // that id and place a launcher on the display ourselves — otherwise the
+        // Desktop Mode window is just a black screen.
+        let errPipe = Pipe()
+        process.standardError = errPipe
+        let launcherStarted = LockedFlag()
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            guard text.contains("New display"),
+                  let r = text.range(of: #"id=(\d+)"#, options: .regularExpression),
+                  let id = Int(text[r].dropFirst(3)) else { return }
+            if launcherStarted.setOnce() {
+                Self.startDesktopLauncher(displayId: id)
             }
+        }
+        process.terminationHandler = { [weak self] _ in
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            Task { @MainActor in self?.appendLog("Desktop Mode window closed") }
         }
         do {
             try process.run()
-            appendLog("Desktop Mode open — launch apps in the new window")
+            appendLog("Desktop Mode open — a desktop launcher will appear in the window")
         } catch {
             appendLog("Desktop Mode failed to start: \(error.localizedDescription)")
         }
+    }
+
+    /// Put a home/launcher on the freshly-created virtual display. Samsung's DeX
+    /// SecondaryLauncher gives a proper desktop; on non-Samsung devices this is a
+    /// harmless no-op and the display still hosts any app launched onto it.
+    private nonisolated static func startDesktopLauncher(displayId: Int) {
+        // Let the display settle, then push the DeX home onto it (twice — the first
+        // delivery sometimes only wakes the display; the second brings it forward).
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+            for _ in 0..<2 {
+                _ = runADB(["shell", "am", "start-activity", "--display", "\(displayId)",
+                            "-n", "com.sec.android.app.launcher/com.honeyspace.dexservice.SecondaryLauncher"])
+                Thread.sleep(forTimeInterval: 0.6)
+            }
+        }
+    }
+
+    /// Toggle Universal Control (drive the phone with the Mac's mouse+keyboard).
+    func toggleUniversalControl() {
+        guard isPaired else { return }
+        universalControl.toggle()
     }
 
     func startMirrorToPhone() {
@@ -1657,6 +1728,7 @@ final class ServerManager: ObservableObject {
         pendingPairCode = nil
         isPaired = false
         transferStatus = nil
+        universalControl.exitIfActive() // never leave the Mac's input trapped
         micReceiver.stop()
         audioSender?.stop()
         audioSender = nil

@@ -449,8 +449,35 @@ struct ContentView: View {
                 audioCard
                 remoteCard
             }
+            universalControlCard
             syncCard
         }
+    }
+
+    private var universalControlCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                cardHeader("Control Phone", icon: "cursorarrow.rays")
+                if !perms.accessibilityOK {
+                    PermissionWarningBadge(info: .accessibility)
+                }
+                Spacer()
+                if server.controllingPhone {
+                    Text("● live")
+                        .font(Theme.mono(10, .medium))
+                        .foregroundStyle(.green)
+                }
+            }
+            Text("Use the Mac's mouse & keyboard on the phone — no mirror window. Slide the cursor off the right edge, or press ⌃⌥⌘. Press ⌃⌥⌘ again to come back.")
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.faint)
+                .lineSpacing(3)
+            Button(server.controllingPhone ? "Stop controlling  (⌃⌥⌘)" : "Control phone  (⌃⌥⌘)") {
+                server.toggleUniversalControl()
+            }
+            .buttonStyle(PillButtonStyle(kind: server.controllingPhone ? .primary : .secondary, size: 11))
+        }
+        .card()
     }
 
     private var syncCard: some View {

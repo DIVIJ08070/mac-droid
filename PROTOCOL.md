@@ -44,6 +44,14 @@ One JSON object per line, terminated by `\n`:
 | `audio.stop` | both | `{"direction": "mic"\|"speaker"}` | stop the stream and close the side channel |
 | `input` | Android → Mac | `{"a": "m"\|"sc"\|"c"\|"dd"\|"du"\|"g", "dx": 1.5, "dy": -2, "b": "l"\|"r"\|"m", "g": "3left"\|"3right"\|"3up"\|"3down"\|"pinchin"\|"pinchout"\|"4up"\|"4down"}` | touchpad: move, scroll, click (left/right/middle), drag down/up, or a named trackpad gesture. Sent up to ~60×/s; Mac injects CGEvents (needs Accessibility permission) |
 | `browse` | both | `{"url": "https://…", "title": "…", "source": "phone"\|"mac"}` | Handoff-style tab sync: the page currently open in the sender's browser. Phone→Mac shows in the Mac menu bar; Mac→phone shows as an "Open on phone" card |
+| `control.start` | Mac → Android | `{}` | Universal Control: the phone shows a cursor overlay (via its accessibility service) that the Mac now drives — no mirror window needed |
+| `control.move` | Mac → Android | `{"dx": 4.0, "dy": -2.0}` | move the phone cursor by a relative delta (Mac points; the phone scales by its density) |
+| `control.press` | Mac → Android | `{}` | left mouse down — anchor a possible drag at the current cursor |
+| `control.release` | Mac → Android | `{"drag": true}` | left mouse up — `drag:true` swipes from the press anchor to the cursor; else a tap |
+| `control.click` | Mac → Android | `{"button": "right"}` | right-click → long-press at the cursor |
+| `control.scroll` | Mac → Android | `{"dy": 40.0}` | scroll at the cursor (positive = up) |
+| `control.stop` | Mac → Android | `{}` | exit control; hide the cursor overlay. Keyboard while controlling reuses `screen.key` |
+| `control.unavailable` | Android → Mac | `{}` | the phone's accessibility service is off — Mac aborts control and restores its cursor |
 | `screen.request` | Mac → Android | `{}` | ask the phone to share its screen; the phone shows a notification (Android requires user consent on-device) |
 | `screen.start` | Android → Mac | `{"width": 540, "height": 1170, "port": 54321}` | screen stream ready: raw H.264 Annex-B on the side channel; Mac opens a viewer window |
 | `screen.stop` | both | `{}` | end the screen stream |

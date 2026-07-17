@@ -527,6 +527,7 @@ object ConnectionManager {
         syncJob?.cancel()
         syncJob = null
         if (::syncFolder.isInitialized) syncFolder.reset()
+        RemoteControlService.instance?.stopControl() // never leave a stuck cursor overlay
         heartbeatJob?.cancel()
         heartbeatJob = null
         connectionJob?.cancel()
@@ -1638,6 +1639,44 @@ object ConnectionManager {
                 if (text.isNotEmpty()) service.typeText(text)
                 else if (special.isNotEmpty()) service.pressSpecial(special)
             }
+
+            // --- Universal Control: Mac drives a cursor overlay on the phone ---
+            "control.start" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                val s = RemoteControlService.instance
+                if (s == null) {
+                    // Tell the Mac to abort (don't leave it hiding its cursor for nothing).
+                    scope.launch { send(Packet("control.unavailable", JSONObject())) }
+                    appendLog("Enable “Bifrost screen control” to let the Mac control the phone")
+                } else s.startControl()
+            }
+            "control.stop" -> RemoteControlService.instance?.stopControl()
+            "control.move" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                RemoteControlService.instance?.moveCursor(
+                    packet.body.optDouble("dx", 0.0).toFloat(),
+                    packet.body.optDouble("dy", 0.0).toFloat())
+            }
+            "control.press" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                RemoteControlService.instance?.pressCursor()
+            }
+            "control.release" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                RemoteControlService.instance?.releaseCursor(packet.body.optBoolean("drag", false))
+            }
+            "control.click" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                // Only right-click reaches here now (long-press); left uses press/release.
+                if (packet.body.optString("button") == "right") {
+                    RemoteControlService.instance?.longClickAtCursor()
+                }
+            }
+            "control.scroll" -> {
+                if (_state.value != ConnectionState.PAIRED) return
+                RemoteControlService.instance?.scrollAtCursor(
+                    packet.body.optDouble("dy", 0.0).toFloat())
+            }
         }
     }
 
@@ -1703,6 +1742,7 @@ object ConnectionManager {
             _micStreaming.value = false
             stopSpeaker()
             stopScreenShare(notifyMac = false)
+            RemoteControlService.instance?.stopControl() // clear any stuck cursor overlay
             heartbeatJob?.cancel()
             heartbeatJob = null
             socket = null
