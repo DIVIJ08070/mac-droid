@@ -1359,7 +1359,22 @@ final class ServerManager: ObservableObject {
                 return
             }
             // Encrypt into a framed record when negotiated; else send raw as before.
-            let chunk = enc ? (SideChannelCrypto.sealRecord(crypto, plainChunk) ?? plainChunk) : plainChunk
+            // If encryption was negotiated but sealing fails, abort rather than leak
+            // plaintext into a stream the receiver will try to decrypt (desync).
+            let chunk: Data
+            if enc {
+                guard let sealed = SideChannelCrypto.sealRecord(crypto, plainChunk) else {
+                    self.appendLog("Encryption failed mid-transfer for \(name)")
+                    self.transferStatus = nil
+                    transferConnection.cancel()
+                    fileListener.cancel()
+                    try? handle.close()
+                    return
+                }
+                chunk = sealed
+            } else {
+                chunk = plainChunk
+            }
             transferConnection.send(content: chunk, completion: .contentProcessed { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
@@ -1623,6 +1638,15 @@ final class ServerManager: ObservableObject {
             // Each thumbnail is [4-byte big-endian length][JPEG bytes].
             while index < items.count, buffer.count >= 4 {
                 let len = buffer.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+                // A bogus length (negative or absurd) means the framing is lost and
+                // the buffer would grow without bound — abort rather than OOM.
+                guard len >= 0, len <= 20_000_000 else {
+                    galleryLoading = false
+                    index = items.count
+                    conn.cancel()
+                    conn.stateUpdateHandler = nil
+                    return
+                }
                 guard buffer.count >= 4 + len else { break }
                 let jpeg = buffer.subdata(in: (buffer.startIndex + 4)..<(buffer.startIndex + 4 + len))
                 buffer.removeSubrange(buffer.startIndex..<(buffer.startIndex + 4 + len))
@@ -1665,11 +1689,14 @@ final class ServerManager: ObservableObject {
             }
         }
 
-        conn.stateUpdateHandler = { state in
+        conn.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 switch state {
                 case .ready: loop()
-                case .failed, .waiting: self.galleryLoading = false
+                case .failed, .waiting:
+                    self?.galleryLoading = false
+                    conn.cancel()
+                    conn.stateUpdateHandler = nil
                 default: break
                 }
             }

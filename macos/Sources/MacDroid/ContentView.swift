@@ -66,6 +66,16 @@ struct ContentView: View {
                         let dropDir = FileManager.default.temporaryDirectory
                             .appendingPathComponent("MacDroidDrops", isDirectory: true)
                         try? FileManager.default.createDirectory(at: dropDir, withIntermediateDirectories: true)
+                        // Purge earlier staged drops (>1h old) so this dir can't grow forever;
+                        // a transfer finishes in seconds, so nothing in flight is ever removed.
+                        if let staged = try? FileManager.default.contentsOfDirectory(
+                            at: dropDir, includingPropertiesForKeys: [.contentModificationDateKey]) {
+                            let cutoff = Date().addingTimeInterval(-3600)
+                            for old in staged where ((try? old.resourceValues(
+                                forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) < cutoff {
+                                try? FileManager.default.removeItem(at: old)
+                            }
+                        }
                         var name = url.lastPathComponent
                         if let suggestedName, !suggestedName.isEmpty {
                             name = suggestedName

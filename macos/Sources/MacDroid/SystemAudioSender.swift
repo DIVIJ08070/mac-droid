@@ -95,7 +95,14 @@ final class SystemAudioSender: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, let connection, sampleBuffer.isValid else { return }
         guard let pcm16 = Self.interleavedPCM16(from: sampleBuffer) else { return }
-        let payload = cipher.map { SideChannelCrypto.sealRecord($0, pcm16) ?? pcm16 } ?? pcm16
+        let payload: Data
+        if let cipher {
+            // Drop the chunk rather than send raw PCM into an encrypted stream.
+            guard let sealed = SideChannelCrypto.sealRecord(cipher, pcm16) else { return }
+            payload = sealed
+        } else {
+            payload = pcm16
+        }
         connection.send(content: payload, completion: .contentProcessed { _ in })
     }
 
@@ -120,7 +127,10 @@ final class SystemAudioSender: NSObject, SCStreamOutput, SCStreamDelegate {
                     for channel in 0..<channels {
                         guard let base = buffers[channel].mData else { continue }
                         let floats = base.assumingMemoryBound(to: Float.self)
-                        for frame in 0..<frameCount {
+                        // Clamp to the buffer's real length — a short channel buffer
+                        // would otherwise read past the end.
+                        let available = Int(buffers[channel].mDataByteSize) / MemoryLayout<Float>.size
+                        for frame in 0..<min(frameCount, available) {
                             samples[frame * channels + channel] = clamp(floats[frame])
                         }
                     }

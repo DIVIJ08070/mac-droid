@@ -192,7 +192,14 @@ final class MacScreenSender: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         if !output.isEmpty {
-            let payload = cipher.map { SideChannelCrypto.sealRecord($0, output) ?? output } ?? output
+            let payload: Data
+            if let cipher {
+                // Drop the frame rather than send it unencrypted into an encrypted stream.
+                guard let sealed = SideChannelCrypto.sealRecord(cipher, output) else { return }
+                payload = sealed
+            } else {
+                payload = output
+            }
             connection.send(content: payload, completion: .contentProcessed { _ in })
         }
     }

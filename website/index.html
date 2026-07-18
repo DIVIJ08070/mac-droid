@@ -711,7 +711,7 @@
   const zipUrl = location.protocol === 'file:'
     ? 'https://mac-droid.vercel.app/downloads/Bifrost.app.zip'
     : new URL('downloads/Bifrost.app.zip', location.href).href;
-  const installCmd = `curl -L ${zipUrl} -o /tmp/Bifrost.zip && ditto -xk /tmp/Bifrost.zip /Applications && rm /tmp/Bifrost.zip && open /Applications/Bifrost.app`;
+  const installCmd = `curl -fL ${zipUrl} -o /tmp/Bifrost.zip && ditto -xk /tmp/Bifrost.zip /Applications && rm /tmp/Bifrost.zip && open /Applications/Bifrost.app`;
   document.getElementById('installCmd').textContent = installCmd;
   function copyInstallCmd(btn) {
     navigator.clipboard.writeText(installCmd).then(() => {

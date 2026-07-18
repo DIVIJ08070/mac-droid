@@ -42,9 +42,10 @@ final class CryptoBox {
     /// base64 (nonce ‖ ciphertext ‖ tag) → decrypt.
     func open(_ base64: String) -> Data? {
         guard
+            let key,
             let combined = Data(base64Encoded: base64.trimmingCharacters(in: .whitespacesAndNewlines)),
             let box = try? AES.GCM.SealedBox(combined: combined),
-            let plaintext = try? AES.GCM.open(box, using: key ?? SymmetricKey(size: .bits256))
+            let plaintext = try? AES.GCM.open(box, using: key)
         else { return nil }
         return plaintext
     }
