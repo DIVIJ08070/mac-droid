@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -50,6 +51,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
@@ -84,9 +87,6 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
         )
         ConnectionManager.init(this)
-        // Only on a genuine cold start — a config-change/process-death recreation
-        // passes non-null state, and sweeping then could yank a live download.
-        if (savedInstanceState == null) AppUpdater.sweep(this)
         requestNotificationPermissionIfNeeded()
         handleShareIntent(intent)
 
@@ -159,72 +159,97 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Prominent full-screen disclosure shown before the user is sent to enable
+ * either Accessibility service (screen control / tab sync). Google requires a
+ * clear, in-context explanation of what an AccessibilityService does before the
+ * user leaves for system settings. Continue proceeds; Cancel backs out.
+ */
 @Composable
-private fun UpdateBanner() {
-    val context = LocalContext.current
-    val update by ConnectionManager.updateAvailable.collectAsState()
-    val phase by AppUpdater.phase.collectAsState()
-    val info = update ?: return
-    val accent = androidx.compose.ui.graphics.Color(0xFF7D6BFF)
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-    val downloading = phase is AppUpdater.Phase.Downloading
-
-    val title = when (phase) {
-        is AppUpdater.Phase.Downloading -> "Updating — Bifrost ${info.first}"
-        is AppUpdater.Phase.Failed -> "Update failed"
-        else -> "Update available — Bifrost ${info.first}"
-    }
-    val subtitle = when (val p = phase) {
-        is AppUpdater.Phase.Downloading -> "Downloading… ${(p.progress * 100).toInt()}%"
-        is AppUpdater.Phase.NeedsPermission -> p.message
-        is AppUpdater.Phase.Failed -> "${p.message} — tap to retry."
-        else -> "Tap to update in place — Android confirms the install."
-    }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .border(1.dp, accent.copy(alpha = 0.4f), shape)
-            .background(accent.copy(alpha = 0.12f), shape)
-            .clickable(enabled = !downloading) { AppUpdater.install(context, info.second) }
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+private fun AccessibilityDisclosureDialog(onContinue: () -> Unit, onCancel: () -> Unit) {
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        Column(
+            Modifier
+                .padding(horizontal = 18.dp, vertical = 36.dp)
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .background(MdBlack, CardShape)
+                .border(1.dp, MdBorder, CardShape)
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            SectionLabel("Accessibility permission")
+            Text(
+                "Bifrost uses Android's Accessibility service",
+                color = MdWhite,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Light,
+                fontSize = 22.sp,
+                lineHeight = 28.sp,
+            )
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 Text(
-                    title,
-                    color = MdWhite,
+                    "Bifrost uses Android's Accessibility service so your paired Mac can " +
+                        "control this phone (trackpad and remote control) and sync the browser " +
+                        "tab you have open.",
+                    color = MdWhite60,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
+                    lineHeight = 20.sp,
                 )
                 Text(
-                    subtitle,
+                    "It only acts on the input you send from your own Mac and never collects, " +
+                        "stores, or shares your data.",
+                    color = MdWhite60,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                )
+                Text(
+                    "On the next screen, turn on the Bifrost service you were enabling.",
                     color = MdWhite40,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
                 )
             }
-            Text("↓", color = accent, fontFamily = FontFamily.Monospace, fontSize = 18.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostPill("Cancel", Modifier.weight(1f)) { onCancel() }
+                PrimaryPill("Continue", Modifier.weight(1f)) { onContinue() }
+            }
         }
-        (phase as? AppUpdater.Phase.Downloading)?.let { p ->
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { p.progress },
-                modifier = Modifier.fillMaxWidth(),
-                color = accent,
-                trackColor = accent.copy(alpha = 0.2f),
-            )
-        }
-        if (phase is AppUpdater.Phase.Failed) {
-            Text(
-                "Get it from the browser instead ↗",
-                color = MdWhite60,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                modifier = Modifier.clickable { ConnectionManager.openUpdateUrl() },
-            )
-        }
+    }
+}
+
+/**
+ * A GhostPill that enables one of Bifrost's Accessibility services. Tapping it
+ * first shows the prominent Accessibility disclosure (Google requirement);
+ * Continue then opens the system Accessibility settings screen.
+ */
+@Composable
+private fun EnableAccessibilityButton(label: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var showDisclosure by remember { mutableStateOf(false) }
+    GhostPill(label, modifier) { showDisclosure = true }
+    if (showDisclosure) {
+        AccessibilityDisclosureDialog(
+            onContinue = {
+                showDisclosure = false
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            },
+            onCancel = { showDisclosure = false },
+        )
     }
 }
 
@@ -278,12 +303,6 @@ private fun hasPostNotifications(context: android.content.Context) =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         hasPerm(context, Manifest.permission.POST_NOTIFICATIONS)
 
-/** The permissions the call banner can't run without (Contacts stays optional). */
-private fun hasCallPerms(context: android.content.Context) =
-    hasPerm(context, Manifest.permission.READ_PHONE_STATE) &&
-        hasPerm(context, Manifest.permission.READ_CALL_LOG) &&
-        hasPerm(context, Manifest.permission.ANSWER_PHONE_CALLS)
-
 @Composable
 fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     val state by ConnectionManager.state.collectAsState()
@@ -302,7 +321,6 @@ fun MacDroidScreen(onReplayOnboarding: () -> Unit) {
     ) {
         if (!fullPane) {
             HomeHeader(state, macName, onReplayOnboarding)
-            UpdateBanner()
         }
         Box(Modifier.weight(1f)) {
             when (state) {
@@ -764,11 +782,8 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
     val allFilesGranted by produceState(initialValue = ConnectionManager.hasAllFilesAccessPublic()) {
         while (true) { value = ConnectionManager.hasAllFilesAccessPublic(); delay(2000) }
     }
-    val callPermsGranted by produceState(initialValue = hasCallPerms(context)) {
-        while (true) { value = hasCallPerms(context); delay(2000) }
-    }
     val anyWarning = !photosGranted || !micGranted || !postNotifGranted ||
-        !tabWatcherOn || !notifAccessOn || !allFilesGranted || !callPermsGranted
+        !tabWatcherOn || !notifAccessOn || !allFilesGranted
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -945,12 +960,7 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
                         fontSize = 12.sp,
                     )
                 } else {
-                    GhostPill("Enable mouse control") {
-                        context.startActivity(
-                            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
+                    EnableAccessibilityButton("Enable mouse control")
                 }
             }
         }
@@ -970,11 +980,9 @@ private fun ConnectedPane(onOpenTouchpad: () -> Unit, onOpenPresenter: () -> Uni
         Entrance(5) { NotificationsCard(accessGranted = notifAccessOn) }
 
         Entrance(5) {
-            SectionHeader("Calls", Modifier.padding(top = 8.dp), help = HelpContent.calls) {
-                if (!callPermsGranted) PermissionBadge(HelpContent.permCallsBundle)
-            }
+            SectionHeader("Battery", Modifier.padding(top = 8.dp), help = HelpContent.battery)
         }
-        Entrance(5) { CallsCard(permsGranted = callPermsGranted) }
+        Entrance(5) { BatteryCard() }
 
         Entrance(5) {
             SectionHeader("Sync", Modifier.padding(top = 8.dp), help = HelpContent.sync) {
@@ -1044,12 +1052,7 @@ private fun TabSyncCard(watcherEnabled: Boolean) {
                 fontSize = 12.sp,
             )
         } else {
-            GhostPill("Enable phone → Mac sync") {
-                context.startActivity(
-                    Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
+            EnableAccessibilityButton("Enable phone → Mac sync")
         }
     }
 }
@@ -1164,75 +1167,15 @@ private fun NotificationsCard(accessGranted: Boolean) {
 }
 
 @Composable
-private fun CallsCard(permsGranted: Boolean) {
-    val enabled by ConnectionManager.callsEnabled.collectAsState()
-
-    val callPermissions = androidx.activity.compose.rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* the polled badge and switch pick the result up on their own */ }
-
+private fun BatteryCard() {
     DarkCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Calls on your Mac",
-                color = MdWhite,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(1f),
-            )
-            androidx.compose.material3.Switch(
-                checked = enabled && permsGranted,
-                onCheckedChange = { on ->
-                    if (on && !permsGranted) {
-                        callPermissions.launch(
-                            arrayOf(
-                                Manifest.permission.READ_PHONE_STATE,
-                                Manifest.permission.READ_CALL_LOG,
-                                Manifest.permission.ANSWER_PHONE_CALLS,
-                                Manifest.permission.READ_CONTACTS,
-                            )
-                        )
-                    }
-                    ConnectionManager.setCallsEnabled(on)
-                },
-            )
-        }
-        if (!permsGranted) {
-            Text(
-                "Incoming calls show a banner on the Mac with Silence and Decline. Needs the Phone, Call logs " +
-                    "and call-control permissions (Contacts adds caller names).",
-                color = MdWhite40,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-            )
-        } else if (enabled) {
-            Text(
-                "✓ When this phone rings, the Mac shows who's calling — Silence or Decline from there.",
-                color = MdWhite40,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-            )
-        } else {
-            Text(
-                "Permissions granted. Flip the switch on to get call banners on the Mac.",
-                color = MdWhite40,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "This phone's battery shows in the Mac's menu bar automatically.",
-                color = MdWhite40,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                modifier = Modifier.weight(1f),
-            )
-            HelpButton(HelpContent.battery)
-        }
+        Text(
+            "This phone's battery level and charging state show in the Mac's menu bar automatically — nothing to set up.",
+            color = MdWhite40,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+        )
     }
 }
 

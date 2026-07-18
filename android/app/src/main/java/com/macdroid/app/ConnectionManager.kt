@@ -98,13 +98,6 @@ object ConnectionManager {
     private val _mirrorNotifications = MutableStateFlow(false)
     val mirrorNotifications: StateFlow<Boolean> = _mirrorNotifications
 
-    private val _callsEnabled = MutableStateFlow(false)
-    val callsEnabled: StateFlow<Boolean> = _callsEnabled
-
-    // Update check: (latestVersionName, apkUrl) when a newer build is available.
-    private val _updateAvailable = MutableStateFlow<Pair<String, String>?>(null)
-    val updateAvailable: StateFlow<Pair<String, String>?> = _updateAvailable
-
     // Touchpad events must stay ordered, so a single consumer drains this queue.
     private val inputChannel =
         Channel<Packet>(capacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -116,13 +109,9 @@ object ConnectionManager {
         appContext = context.applicationContext
         if (!::syncFolder.isInitialized) syncFolder = SyncFolderManager(appContext)
         createNotificationChannel()
-        checkForUpdate()
         _mirrorNotifications.value =
             appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
                 .getBoolean("mirrorNotifications", false)
-        _callsEnabled.value =
-            appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
-                .getBoolean("callsOnMac", false)
         registerSystemReceivers()
         // A remembered Mac means the reconnect service should be running from the
         // start — it owns discovery/USB-tunnel retries. Without this it only starts
@@ -216,12 +205,11 @@ object ConnectionManager {
         }
     }
 
-    // MARK: battery + calls (system receivers)
+    // MARK: battery (system receivers)
 
     private var systemReceiversRegistered = false
 
-    /** Charger plug/unplug and low/okay fire an immediate battery packet;
-     *  the phone-state receiver drives the Mac's incoming-call banner. */
+    /** Charger plug/unplug and low/okay fire an immediate battery packet. */
     private fun registerSystemReceivers() {
         if (systemReceiversRegistered) return
         systemReceiversRegistered = true
@@ -241,7 +229,6 @@ object ConnectionManager {
             filter,
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        CallBridge.register(appContext)
     }
 
     /** Current level + charging state, shared by the heartbeat and battery packets. */
@@ -270,36 +257,6 @@ object ConnectionManager {
             } catch (_: Exception) {
             }
         }
-    }
-
-    fun setCallsEnabled(enabled: Boolean) {
-        _callsEnabled.value = enabled
-        appContext.getSharedPreferences("macdroid", Context.MODE_PRIVATE)
-            .edit().putBoolean("callsOnMac", enabled).apply()
-        appendLog(if (enabled) "Call banners on Mac on" else "Call banners on Mac off")
-    }
-
-    /** ringing / offhook / idle → the Mac's incoming-call banner. During offhook
-     *  the phone's REAL mic-mute and speakerphone state ride along so the Mac's
-     *  live-call toggles reflect truth. */
-    fun sendCallState(
-        state: String,
-        name: String,
-        number: String,
-        muted: Boolean? = null,
-        speaker: Boolean? = null,
-    ) {
-        if (_state.value != ConnectionState.PAIRED) return
-        scope.launch {
-            send(Packet("call.state", JSONObject().apply {
-                put("state", state)
-                put("name", name)
-                put("number", number)
-                if (muted != null) put("muted", muted)
-                if (speaker != null) put("speaker", speaker)
-            }))
-        }
-        appendLog("Call $state → Mac")
     }
 
     /** Encrypt and write a packet (once the secure channel is up). */
@@ -723,34 +680,6 @@ object ConnectionManager {
                 syncFolder.pullFinished(rel, false)
             }
         }
-    }
-
-    /** Fetch version.json from the site; flag if a newer versionCode is published. */
-    private fun checkForUpdate() {
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val currentCode = appContext.packageManager
-                    .getPackageInfo(appContext.packageName, 0).longVersionCode
-                val text = java.net.URL("https://mac-droid.vercel.app/version.json")
-                    .openConnection().apply { connectTimeout = 8000; readTimeout = 8000 }
-                    .getInputStream().bufferedReader().use { it.readText() }
-                val android = JSONObject(text).getJSONObject("android")
-                val latestCode = android.getLong("versionCode")
-                if (latestCode > currentCode) {
-                    _updateAvailable.value =
-                        android.optString("versionName", "new") to android.getString("url")
-                    appendLog("Update available: v${android.optString("versionName")}")
-                }
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    fun openUpdateUrl() {
-        val url = _updateAvailable.value?.second ?: return
-        appContext.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
     }
 
     fun setMirrorNotifications(enabled: Boolean) {
@@ -1386,7 +1315,6 @@ object ConnectionManager {
                 flushPendingShares()
                 startSyncLoop()
                 sendBatteryNow() // seed the Mac's menu-bar battery right away
-                CallBridge.sendCurrentState(appContext) // show the banner for a call already in progress
             }
 
             "pair.reject" -> {
@@ -1451,12 +1379,6 @@ object ConnectionManager {
                 if (_state.value != ConnectionState.PAIRED) return
                 val key = packet.body.optString("key")
                 if (key.isNotEmpty()) NotificationMirrorService.instance?.dismissFromMac(key)
-            }
-
-            "call.action" -> {
-                if (_state.value != ConnectionState.PAIRED) return
-                if (!_callsEnabled.value) return
-                CallBridge.handleAction(appContext, packet.body.optString("action"))
             }
 
             "file.offer" -> {
