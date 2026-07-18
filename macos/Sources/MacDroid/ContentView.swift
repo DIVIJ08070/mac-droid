@@ -177,7 +177,11 @@ struct ContentView: View {
                     statusHeader
                         .riseIn(delay: 0.05)
 
-                    if !perms.accessibilityOK || !perms.notificationsOK || !perms.screenRecordingOK || !perms.inputMonitoringOK {
+                    // Input Monitoring is intentionally NOT in this global strip — it's
+                    // only needed for Universal Control's keyboard, is requested only when
+                    // that feature turns on, and is surfaced on the Universal Control card.
+                    // Nagging for it up here left it stuck "needed" forever for everyone else.
+                    if !perms.accessibilityOK || !perms.notificationsOK || !perms.screenRecordingOK {
                         permissionsStrip
                             .riseIn(delay: 0.07)
                     }
@@ -996,13 +1000,10 @@ struct ContentView: View {
                     .foregroundStyle(Theme.faint)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !perms.accessibilityOK || !perms.notificationsOK || !perms.inputMonitoringOK {
+            if !perms.accessibilityOK || !perms.notificationsOK {
                 HStack(spacing: 8) {
                     if !perms.accessibilityOK {
                         PermissionWarningChip(info: .accessibility)
-                    }
-                    if !perms.inputMonitoringOK {
-                        PermissionWarningChip(info: .inputMonitoring)
                     }
                     if !perms.notificationsOK {
                         PermissionWarningChip(info: .notifications)
