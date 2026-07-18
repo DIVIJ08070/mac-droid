@@ -709,7 +709,7 @@
   // ───── Terminal install command ─────
   // curl doesn't set the com.apple.quarantine attribute, so this path skips Gatekeeper entirely.
   const zipUrl = location.protocol === 'file:'
-    ? 'https://YOUR-DOMAIN/downloads/Bifrost.app.zip'
+    ? 'https://mac-droid.vercel.app/downloads/Bifrost.app.zip'
     : new URL('downloads/Bifrost.app.zip', location.href).href;
   const installCmd = `curl -L ${zipUrl} -o /tmp/Bifrost.zip && ditto -xk /tmp/Bifrost.zip /Applications && rm /tmp/Bifrost.zip && open /Applications/Bifrost.app`;
   document.getElementById('installCmd').textContent = installCmd;
